@@ -22,10 +22,10 @@ Every error answer has the body described in [`api.md`](api.md). The field `code
 | `unit_held` | 409 | A unit is in an open ticket and cannot change its lifecycle | Finish the ticket first |
 | `unit_unavailable` | 409 | A unit at handover is not active, not of the right model or already held | Choose another unit |
 | `duplicate` | 409 | A name, a prefix or a serial number is already used | Choose another value |
-| `request_in_progress` | 409 | A repeat of a ticket request arrives while the first one still runs | Wait a moment and read the ticket list |
+| `request_in_progress` | 409 | A repeat of a request that creates something arrives while the first one still runs | Wait a moment and read the ticket list |
 | `validation_failed` | 422 | A field fails a rule, with one entry in `details` for each field | Show each message at its field |
 | `rate_limited` | 429 | A rate limit is over, also after too many failed admin sign ins | Wait for the number of seconds in `Retry-After` |
 | `internal` | 500 | A bug or an unexpected failure | Show a general message and give the request id to a maintainer |
 | `unavailable` | 503 | The database is not reachable | Try again later |
 
-A `details` entry has `field`, `code` and `message`. The codes of a field are short words such as `required`, `too_long`, `too_many`, `invalid_format`, `not_ub_email` and `out_of_range`.
+The answers `validation_failed`, `stock_changed` and `duplicate` can carry `details`. A `details` entry has `field`, `code` and `message`. The codes of a field are short words such as `required`, `too_long`, `too_short`, `unknown_reference`, `too_many`, `too_many_items`, `too_many_open_tickets`, `model_retired`, `invalid_format`, `not_ub_email`, `out_of_range` and `duplicate`. A `duplicate` entry names the field, and for a serial number it gives the tag of the other unit in `existingTag`.
