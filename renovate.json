@@ -36,9 +36,14 @@
       "description": "the images of the lint tools run in the workflows and never ship, so they take the commit type of the workflows",
       "matchManagers": ["dockerfile"],
       "matchFileNames": [".github/tools/Dockerfile"],
-      "semanticCommitType": "ci",
-      "groupName": "Lint tool images",
-      "matchUpdateTypes": ["minor", "patch", "digest", "pin"]
+      "semanticCommitType": "ci"
+    },
+    {
+      "description": "minor, patch, digest and pin updates of the lint tool images arrive in one pull request, and a major update keeps its own",
+      "matchManagers": ["dockerfile"],
+      "matchFileNames": [".github/tools/Dockerfile"],
+      "matchUpdateTypes": ["minor", "patch", "digest", "pin"],
+      "groupName": "Lint tool images"
     },
     {
       "matchManagers": ["github-actions"],

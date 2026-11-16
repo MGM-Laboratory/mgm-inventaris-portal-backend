@@ -25,6 +25,10 @@ profile.cov
 go.work
 go.work.sum
 
+# build output and key files
+bin/
+*.pem
+
 # env files, only the example is tracked
 .env
 .env.*
