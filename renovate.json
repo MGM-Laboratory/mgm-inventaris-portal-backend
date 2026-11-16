@@ -1,0 +1,75 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", "helpers:pinGitHubActionDigestsToSemver"],
+  "timezone": "Asia/Jakarta",
+  "schedule": ["before 7am on monday"],
+  "minimumReleaseAge": "7 days",
+  "internalChecksFilter": "strict",
+  "rebaseWhen": "conflicted",
+  "platformCommit": "enabled",
+  "postUpdateOptions": ["gomodTidy"],
+  "semanticCommits": "enabled",
+  "semanticCommitType": "chore",
+  "semanticCommitScope": "deps",
+  "labels": ["dependencies"],
+  "assignees": ["SyafaHadyan"],
+  "dependencyDashboard": true,
+  "dependencyDashboardLabels": ["dependencies"],
+  "automerge": false,
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "schedule": ["at any time"],
+    "labels": ["dependencies", "security"],
+    "semanticCommitType": "fix",
+    "minimumReleaseAge": null
+  },
+  "packageRules": [
+    {
+      "matchManagers": ["github-actions", "custom.regex", "pre-commit"],
+      "semanticCommitType": "ci"
+    },
+    {
+      "matchManagers": ["dockerfile", "docker-compose"],
+      "semanticCommitType": "build"
+    },
+    {
+      "description": "the images of the lint tools run in the workflows and never ship, so they take the commit type of the workflows",
+      "matchManagers": ["dockerfile"],
+      "matchFileNames": [".github/tools/Dockerfile"],
+      "semanticCommitType": "ci",
+      "groupName": "Lint tool images",
+      "matchUpdateTypes": ["minor", "patch", "digest", "pin"]
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "GitHub Actions"
+    },
+    {
+      "matchManagers": ["gomod"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "Go modules",
+      "groupSlug": "go-minor-patch"
+    },
+    {
+      "matchManagers": ["custom.regex"],
+      "matchUpdateTypes": ["major"],
+      "groupName": null,
+      "dependencyDashboardApproval": true
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "tool versions in workflow files that sit under a renovate comment",
+      "managerFilePatterns": ["/^\\.github/workflows/.+\\.ya?ml$/"],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>\\S+)\\n\\s*[A-Za-z0-9_]+: (?<currentValue>\\S+)"
+      ]
+    }
+  ],
+  "pre-commit": {
+    "enabled": true
+  },
+  "minimumReleaseAgeBehaviour": "timestamp-optional"
+}
