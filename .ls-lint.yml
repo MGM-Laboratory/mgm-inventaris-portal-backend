@@ -34,7 +34,13 @@ ls:
     <<: [*shared, *yaml-ban]
   .github/*/*:
     <<: [*shared, *yaml-ban]
+  .github/*/*/*:
+    <<: [*shared, *yaml-ban]
   docs:
+    <<: [*shared, *yaml-ban]
+  docs/*:
+    <<: [*shared, *yaml-ban]
+  docs/*/*:
     <<: [*shared, *yaml-ban]
 
   # a workflow ends with .yaml and not .yml, and the same holds for a name with more dots such as check.config.yml
