@@ -104,6 +104,15 @@ jobs:
         with:
           sarif_file: trivy-fs-results.sarif
 
+      # A fork token cannot write to code scanning, so the report of a fork pull request is kept as an artifact for a few days
+      - name: Keep the Trivy results of a fork pull request
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always() && github.event.pull_request.head.repo.fork == true
+        with:
+          name: trivy-fs-results
+          path: trivy-fs-results.sarif
+          retention-days: 7
+
   scorecard:
     name: OSSF Scorecard
     if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
