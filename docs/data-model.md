@@ -18,7 +18,7 @@ All tables live in one PostgreSQL database. Ids are UUIDs made by the service. T
 - `lifecycle` is one of `active`, `maintenance`, `lost` and `retired`. Only `active` units can be loaned.
 - A model or a unit is retired and never deleted. A permanent delete is allowed only for a model or a unit that no ticket has ever used.
 - A model can be retired only when no ticket in the status `diajukan`, `disetujui`, `siap_diambil` or `dipinjam` asks for it. Otherwise the service answers `409`.
-- An empty serial number is stored as null, so units without a serial never clash.
+- A serial number has 3 to 100 characters after the service trims the spaces. An empty serial number is stored as null, so units without a serial never clash.
 - A lifecycle change to `lost` or `retired` needs a note.
 
 ## Tickets

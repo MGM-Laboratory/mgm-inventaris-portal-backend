@@ -86,7 +86,7 @@ The counters cover only the sign in routes, the ticket creation, the ticket look
 | --- | --- | --- |
 | Anyone | No session | Read the public settings, the public page of an asset, and look up a ticket with its number and email. A lookup starts a guest session without an identity |
 | Guest | A guest session | Read the catalog, create tickets (needs the identity), read and cancel the tickets of the session |
-| Admin | An admin session | Everything above, and all admin routes |
+| Admin | An admin session | The routes that read, and all admin routes. An admin session cannot create or cancel a ticket as a guest |
 
 An identified guest session needs the name, the NIM or NIP and an email whose domain is `ub.ac.id` or ends in `.ub.ac.id`, such as `student.ub.ac.id`. The service compares the email in lower case.
 

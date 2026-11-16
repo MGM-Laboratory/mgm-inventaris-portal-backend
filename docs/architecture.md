@@ -22,7 +22,7 @@ The backend of the LabMGM inventory portal keeps the loan records of the lab. A 
 1. The reverse proxy sends `/api` to the service and every other path to the frontend. The browser sees one hostname.
 2. A middleware assigns a request id, reads the session cookie and loads the session.
 3. A write request must also carry the CSRF header, except the three routes that start a session or look a ticket up, and its `Origin` header must match the public hostname.
-4. The sign in routes, the ticket creation, the ticket lookup and the account routes of an admin count in the database and answer `429` when a limit is over. Ticket creation counts each request, and the other routes count failures. Other routes are not counted.
+4. The sign in routes, the ticket creation, the ticket lookup and the account routes of an admin count in the database and answer `429` when a limit is over. Ticket creation and the guest sign in count each request, and the admin sign in, the lookup and the account routes count failures. Other routes are not counted.
 5. The handler validates the body, runs one database transaction and answers with JSON.
 
 ## Package layout
