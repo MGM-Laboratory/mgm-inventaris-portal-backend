@@ -18,10 +18,10 @@ All tables live in one PostgreSQL database. Ids are UUIDs made by the service. T
 - `lifecycle` is one of `active`, `maintenance`, `lost` and `retired`. Only `active` units can be loaned.
 - A model or a unit is retired and never deleted. A permanent delete is allowed only for a model or a unit that no ticket has ever used.
 - A model can be retired only when no ticket in the status `diajukan`, `disetujui`, `siap_diambil` or `dipinjam` asks for it. Otherwise the service answers `409`.
-- The names of categories and models, the prefixes and the serial numbers are unique ignoring letter case, through unique indexes on the lower case value. A prefix is stored in upper case.
-- A unit changes its lifecycle only from `active` to `maintenance`, `lost` or `retired`, from `maintenance` to `active`, `lost` or `retired`, from `lost` to `active` or `retired`, and from `retired` to `active` while its model is not retired. Another step answers `409` with the code `status_conflict`.
+- The names of categories and models and the serial numbers are unique ignoring letter case, through unique indexes on the lower case value. A prefix is upper case by its pattern and unique.
+- A unit changes its lifecycle only from `active` to `maintenance`, `lost` or `retired`, from `maintenance` to `active`, `lost` or `retired`, from `lost` to `active` or `retired`, and from `retired` to `active`. Every step to `active` is refused while its model is retired. Another step answers `409` with the code `status_conflict`.
 - Models and units have no version. When two admins change the same one, the last write wins.
-- A model can be created together with a new category in one transaction. A category name that exists reuses the existing category.
+- A model can be created together with a new category in one transaction. A category name that exists reuses the existing category and ignores the submitted tone.
 - A serial number has 3 to 100 characters after the service trims the spaces. An empty serial number is stored as null, so units without a serial never clash.
 - A lifecycle change to `lost` or `retired` needs a note.
 
@@ -76,7 +76,7 @@ All tables live in one PostgreSQL database. Ids are UUIDs made by the service. T
 | `admin_recovery_codes` | One use codes for TOTP | `admin_id`, `code_hash`, `used_at` |
 | `sessions` | Guest and admin sessions, `kind` is `guest`, `admin` or `admin_setup` | `token_hash` (primary key), `kind`, `admin_id`, `guest_name`, `guest_nim_nip`, `guest_email`, `csrf_token`, `viewable_tickets`, `created_at`, `last_seen_at`, `expires_at` |
 | `rate_counters` | Fixed window counters | `key`, `window_start`, `count` |
-| `idempotency_keys` | Safe repeat of a ticket request | `session_hash`, `key` (together the primary key), `state`, `status_code`, `response`, `created_at` |
+| `idempotency_keys` | Safe repeat of a request that creates something | `session_hash`, `operation`, `key` (together the primary key), `state`, `status_code`, `response`, `created_at` |
 | `audit_log` | Admin actions | `id`, `at`, `admin_id`, `action`, `target`, `request_id` |
 
 - The TOTP secret is encrypted with a key from the settings before it is stored. `totp_last_step` holds the last accepted time step, so a code cannot be used twice.
