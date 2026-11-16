@@ -58,5 +58,8 @@ ignore:
   - .github/ISSUE_TEMPLATE
   # pre-commit reads this exact name
   - .pre-commit-config.yaml
+  # the Redocly CLI and the tools around OpenAPI read these exact names
+  - openapi.yaml
+  - redocly.yaml
   # GitHub reads the template by this name
   - .github/pull_request_template.md
