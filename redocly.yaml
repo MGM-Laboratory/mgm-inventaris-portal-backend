@@ -1,25 +1,4 @@
+# The built-in ruleset recommended-strict is recommended with every warning raised to an error. Redocly CLI exits with 1 only on an
+# error, so a warning in the recommended ruleset would pass CI, and a new rule of a later CLI version is covered as well.
 extends:
-  - recommended
-# Redocly CLI exits with 1 only on an error, and the recommended ruleset leaves these rules at warn in the version that
-# the config workflow pins. A warning would pass CI, so each of them is an error here.
-rules:
-  info-license: error
-  info-license-strict: error
-  no-ambiguous-paths: error
-  no-duplicated-enum-values: error
-  no-duplicated-tag-names: error
-  no-illogical-composition-keywords: error
-  no-invalid-media-type-examples: error
-  no-invalid-parameter-examples: error
-  no-invalid-schema-examples: error
-  no-mixed-number-range-constraints: error
-  no-required-schema-properties-undefined: error
-  no-server-example.com: error
-  no-unsafe-markdown: error
-  no-unused-components: error
-  operation-2xx-response: error
-  operation-4xx-response: error
-  operation-operationId: error
-  security-scopes-defined: error
-  spec-ref-siblings: error
-  tag-description: error
+  - recommended-strict

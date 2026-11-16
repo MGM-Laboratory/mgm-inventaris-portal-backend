@@ -319,7 +319,7 @@ paths:
         - name: q
           in: query
           required: false
-          description: Only the models whose name contains this text. The match ignores letter case. The text has at least 2 characters.
+          description: Only the models whose name or description contains this text. The match ignores letter case. The text has at least 2 characters.
           schema:
             type: string
             minLength: 2
@@ -1821,7 +1821,7 @@ components:
               message: The body is not valid JSON.
               requestId: c0a80101-example-request
     Unauthenticated:
-      description: The request has no session, or the session expired, or the sign in values are wrong.
+      description: The request has no session, or the session expired.
       headers:
         X-Request-Id:
           $ref: "#/components/headers/XRequestId"
