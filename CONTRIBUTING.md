@@ -44,7 +44,7 @@ Use Conventional Commits (`type(scope): summary`) in English, with one of feat, 
 
 - Name the branch `type/short-description`, for example `fix/loan-lookup`. The type is the same as the type of the commits.
 - Write the title as a Conventional Commit, for example `fix(loans): reject a loan with no items`.
-- The body is only the list of commits, one bullet for each commit.
+- The body is only the list of commits, one bullet for each commit. A merge commit of `main` into your branch does not need a bullet.
 - Add one label, `bug` for a fix, `enhancement` for a feature and `documentation` for docs only, and assign the pull request to yourself. A contributor without write access cannot assign it, so ask a maintainer to do it and then rerun the failed check.
-- The check Conventional commits reads every commit message and the title. The check PR format reads the branch, the label, the assignee and the body. A bad commit message needs a rebase that rewords it and a force push to your own branch. For a missing label or assignee, add it and ask a maintainer to rerun the failed check, because a rerun needs write access.
+- The check Conventional commits reads every commit message and the title. The check PR format reads the branch, the label, the assignee and the body. A bad commit message needs a rebase that rewords it and a force push to your own branch. A missing label or assignee is added by a maintainer, because it needs write access, and the check runs again by itself. After a push or a rebase, update the body so that the bullets match the commits.
 - The maintainer merges with a merge commit, never a squash or a rebase.
