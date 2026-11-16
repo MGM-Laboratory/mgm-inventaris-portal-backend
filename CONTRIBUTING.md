@@ -1,0 +1,50 @@
+# Contributing to the LabMGM inventory portal backend
+
+Thanks for taking the time to contribute. This repository is the backend of the LabMGM inventory portal, written in Go with PostgreSQL. It has no service code yet. Read `README.md` for what exists today.
+
+## Before you change code
+
+- Keep one pull request to one concern. A discrete change is easier to review than a bundle.
+- Add tests with new logic. A bug fix comes with a test that fails without it. When a change cannot be tested, say why in the pull request.
+- A test that depends on how PostgreSQL or its driver really behaves must run against a real database and not against a mock.
+- Heavy work runs in CI. Push the branch and read the results there. Run a single narrow check locally only when CI cannot explain a failure.
+- Do not commit a secret, a token or a real `.env` file. Only `.env.example` files are tracked.
+
+## Workflow
+
+There is no `dev` branch. Every change to `main` goes through a pull request.
+
+1. Fork the repository, or branch directly if you are a collaborator.
+2. Make your change.
+3. Open a pull request against `main`. Keep it focused.
+4. Wait for the checks below. They have to be green, every review thread has to be resolved and the code owner has to approve the pull request. The maintainer team may bypass that approval, so the owner can merge their own pull request after the checks are green.
+5. Only the maintainer merges, with a merge commit and never a squash or a rebase. Nobody can push to `main` directly, and every commit has to be signed.
+
+## Checks
+
+Every pull request runs the checks below. The ruleset of the repository requires only **Conventional commits** today. The other checks join the ruleset after each of them has run once, and `docs/ci-cd.md` lists the current state.
+
+- **Conventional commits** reads every commit message and the title of the pull request.
+- **PR format** reads the branch name, the label, the assignee and the body.
+- **Config gate** runs actionlint, Zizmor, ShellCheck, ls-lint for file names and the Renovate validator.
+- **Security gate** summarizes dependency review, gitleaks and a Trivy filesystem scan. All three fail on a finding. Trivy fails on a CRITICAL or HIGH finding and also sends its findings to code scanning.
+- **pre-commit.ci** is not required by the ruleset, but its report should be clean. It runs repository hygiene checks on every pull request and does not push a fix.
+
+A commit message or a title that does not follow Conventional Commits blocks the merge. A lint warning or a deprecation notice in the output of a check is still something to fix before the pull request is done, even when it does not turn the check red.
+
+## Go checks
+
+The Go code is not written yet, so no Go check runs today. The Go checks join CI in the same pull request that adds the Go code, and this page is updated then. Run them through CI. When a failure needs a local run to explain it, use `go test ./path/to/package` for a single package and not the whole suite.
+
+## Commit messages
+
+Use Conventional Commits (`type(scope): summary`) in English, with one of feat, fix, docs, style, refactor, perf, test, build, ci, chore or revert. Sign every commit so that GitHub shows it as verified.
+
+## Pull requests
+
+- Name the branch `type/short-description`, for example `fix/loan-lookup`. The type is the same as the type of the commits.
+- Write the title as a Conventional Commit, for example `fix(loans): reject a loan with no items`.
+- The body is only the list of commits, one bullet for each commit.
+- Add one label, `bug` for a fix, `enhancement` for a feature and `documentation` for docs only, and assign the pull request to yourself. A contributor without write access cannot assign it, so ask a maintainer to do it and then rerun the failed check.
+- The check Conventional commits reads every commit message and the title. The check PR format reads the branch, the label, the assignee and the body. A bad commit message needs a rebase that rewords it and a force push to your own branch. For a missing label or assignee, add it and rerun the failed check.
+- The maintainer merges with a merge commit, never a squash or a rebase.
