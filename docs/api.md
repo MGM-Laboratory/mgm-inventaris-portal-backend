@@ -1,6 +1,6 @@
 # API
 
-Status of this page. It describes the planned contract. A hand written `openapi.yaml` will hold the full contract and will be kept in step with the routes. It is added in a later pull request. This page explains the rules that every route shares.
+Status of this page. It describes the planned contract. The hand written `openapi.yaml` in the root holds the full contract and is kept in step with the routes. This page explains the rules that every route shares.
 
 ## Basics
 
