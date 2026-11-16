@@ -1,6 +1,6 @@
 # API
 
-Status of this page. It describes the planned contract. A hand written `openapi.yaml` will hold the full contract and will be kept in step with the routes. It is added in a later pull request. This page explains the rules that every route shares.
+Status of this page. It describes the planned contract. The hand written `openapi.yaml` in the root holds the full contract and is kept in step with the routes. This page explains the rules that every route shares.
 
 ## Basics
 
@@ -50,9 +50,9 @@ Every error has the same body.
 | --- | --- | --- |
 | 400 | The body cannot be read | `bad_request` |
 | 401 | No session or an expired one | `unauthenticated`, `session_expired`, `invalid_credentials` |
-| 403 | The role or the CSRF check fails | `forbidden`, `csrf_failed`, `origin_not_allowed` |
+| 403 | The role, the identity or the CSRF check fails | `forbidden`, `identity_required`, `csrf_failed`, `origin_not_allowed` |
 | 404 | The thing does not exist or may not be seen | `not_found`, `ticket_not_found` |
-| 409 | The state changed under the request | `stock_changed`, `version_conflict`, `status_conflict`, `unit_held`, `unit_unavailable`, `duplicate` |
+| 409 | The state changed under the request | `stock_changed`, `version_conflict`, `status_conflict`, `unit_held`, `unit_unavailable`, `duplicate`, `request_in_progress` |
 | 422 | A field fails validation | `validation_failed` with `details` |
 | 429 | A rate limit is over, also after too many failed admin sign ins | `rate_limited`, with the header `Retry-After` in seconds |
 | 500 | A bug or an outage | `internal` |
@@ -74,10 +74,11 @@ These are settings. The lab decides the final values, and the values here are th
 | Failed ticket lookups for one IP address, and for one ticket number without its last part together with one email | 20 and 10 each hour |
 | Failed admin sign ins for one email from one IP address | 5 in 15 minutes, then 15 minutes of `429` for that pair |
 | Failed admin sign ins for one IP address | 20 each hour |
+| Failed password or code checks on the account routes of one admin session | 5 in 15 minutes, then 15 minutes of `429` for that session |
 
-The guest form has a hidden trap field. A request that fills it gets a normal looking answer and creates nothing.
+The guest sign in form and the ticket form have a hidden field named `website`. A client leaves it empty. A request that fills it gets a normal looking answer and creates nothing.
 
-The counters cover only the sign in routes, the ticket creation and the ticket lookup. A campus network can share one address, so the admin limit for an address counts only failures. The key of a lookup limit is the part `yymm-nnnn` of the number together with a hash of the submitted email, because the last part of the number is the secret and a stranger must not be able to block the lookup of a real borrower.
+The counters cover only the sign in routes, the ticket creation, the ticket lookup and the failed password or code checks on the account routes of an admin. A campus network can share one address, so the admin limit for an address counts only failures. The key of a lookup limit is the part `yymm-nnnn` of the number together with a hash of the submitted email, because the last part of the number is the secret and a stranger must not be able to block the lookup of a real borrower.
 
 ## Roles
 
@@ -85,7 +86,7 @@ The counters cover only the sign in routes, the ticket creation and the ticket l
 | --- | --- | --- |
 | Anyone | No session | Read the public settings, the public page of an asset, and look up a ticket with its number and email. A lookup starts a guest session without an identity |
 | Guest | A guest session | Read the catalog, create tickets (needs the identity), read and cancel the tickets of the session |
-| Admin | An admin session | Everything above, and all admin routes |
+| Admin | An admin session | The routes that read, and all admin routes. An admin session cannot create or cancel a ticket as a guest |
 
 An identified guest session needs the name, the NIM or NIP and an email whose domain is `ub.ac.id` or ends in `.ub.ac.id`, such as `student.ub.ac.id`. The service compares the email in lower case.
 
@@ -93,7 +94,7 @@ An identified guest session needs the name, the NIM or NIP and an email whose do
 
 1. **Request.** A guest signs in, reads the catalog, and posts a ticket. The service checks the limits, creates the number and the rows, and answers `201` with the ticket. The ticket starts as `diajukan`.
 2. **Sign in of an admin.** The body holds the email, the password and either a TOTP code or a recovery code. The service checks all of them and answers `invalid_credentials` for any wrong value, so the answer does not say which one is wrong. An admin who has no TOTP yet, or whose initial password has expired, gets a setup session of 15 minutes. It can call only the setup route and the session routes.
-3. **Decision.** An admin posts a decision with the version it read. An approval carries the approved quantity of each model and may change the days. The service locks the models, checks the available quantity, and answers `409` with `stock_changed` when it is too low.
+3. **Decision.** An admin posts a decision with the version it read. An approval carries the approved quantity of each model and may change the days. At least one approved quantity must be above 0, and the service answers `422` otherwise, because a request that should hold nothing is a reject. The service locks the models, checks the available quantity, and answers `409` with `stock_changed` when it is too low.
 4. **Handover.** The admin posts the tags of the units that it took from the shelf, one for each approved item. The ticket becomes `dipinjam`.
 5. **Return.** The admin posts the tag of every unit of the ticket with an outcome, which is `ok`, `maintenance` or `lost`. The return is all or nothing, and an outcome of `lost` needs a note. The ticket becomes `dikembalikan`, and a unit with another outcome changes its lifecycle.
 6. **Cancel.** A guest may cancel a ticket in the status `diajukan`. An admin may reject a ticket in the status `diajukan` with a note, and may cancel a ticket in the status `disetujui` or `siap_diambil` with a note.

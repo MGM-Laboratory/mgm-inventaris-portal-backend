@@ -1,0 +1,4 @@
+# The built-in ruleset recommended-strict is recommended with every warning raised to an error. Redocly CLI exits with 1 only on an
+# error, so a warning in the recommended ruleset would pass CI, and a new rule of a later CLI version is covered as well.
+extends:
+  - recommended-strict

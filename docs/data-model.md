@@ -18,7 +18,7 @@ All tables live in one PostgreSQL database. Ids are UUIDs made by the service. T
 - `lifecycle` is one of `active`, `maintenance`, `lost` and `retired`. Only `active` units can be loaned.
 - A model or a unit is retired and never deleted. A permanent delete is allowed only for a model or a unit that no ticket has ever used.
 - A model can be retired only when no ticket in the status `diajukan`, `disetujui`, `siap_diambil` or `dipinjam` asks for it. Otherwise the service answers `409`.
-- An empty serial number is stored as null, so units without a serial never clash.
+- A serial number has 3 to 100 characters after the service trims the spaces. An empty serial number is stored as null, so units without a serial never clash.
 - A lifecycle change to `lost` or `retired` needs a note.
 
 ## Tickets
@@ -44,7 +44,7 @@ All tables live in one PostgreSQL database. Ids are UUIDs made by the service. T
 - The stock of a model is the count of its units with the lifecycle `active`.
 - A model is held by every ticket in the status `disetujui`, `siap_diambil` or `dipinjam`. A ticket in the status `diajukan` holds nothing. A late ticket is a ticket in the status `dipinjam`, so it still holds.
 - Held quantity is the sum of `approved_qty` of those tickets for the model. Available quantity is the stock minus the held quantity, and the API shows a negative number as 0.
-- An approval is refused when `approved_qty` is more than the available quantity at that moment.
+- An approval is refused when `approved_qty` is more than the available quantity at that moment. An approval also needs at least one `approved_qty` above 0, because a hold of nothing could only be undone by a cancel.
 - A handover needs exactly `approved_qty` units for each model. Each unit must be active, of the right model and not in an open row of `ticket_units`.
 - A unit cannot leave the status `active` while it is in an open row of `ticket_units`, and the service answers `409` with the code `unit_held`. It also cannot leave the status `active` by an admin change when the stock would fall below the held quantity of its model, and the service answers `409` with the code `stock_changed`.
 - A return is all or nothing and runs in one transaction. It closes the ticket, then closes the rows of `ticket_units`, then applies the lifecycle of each unit. A unit that comes back as `lost` or `maintenance` lowers the stock after the ticket no longer holds, so the stock never drops below a hold that the same ticket made.
@@ -59,7 +59,7 @@ All tables live in one PostgreSQL database. Ids are UUIDs made by the service. T
 - Creating a ticket takes the advisory locks first and then the requested model rows with `select ... for share`, in the order of the model id. It refuses a retired model with `validation_failed`. A permanent delete of a model or a unit locks it first and answers `409` with the code `status_conflict` when a ticket used it, and a database error never reaches the client as `500`.
 - The `model_id` of a unit never changes, because a change would break the lock order.
 - A status change of a ticket is a guarded update. It names the expected old status and the expected version, and it changes no row when either differs. The service then answers `409`.
-- A request that creates a ticket may carry an `Idempotency-Key`. The service stores the key for the session with the answer for 24 hours and returns the same answer for a repeat. The row has a state, `running` or `done`, and a repeat that arrives while the first request runs answers `409` with the code `request_in_progress`.
+- A request that creates a ticket may carry an `Idempotency-Key`. The service stores the key for the session with the answer for 24 hours and returns the same answer for a repeat, whatever the new body says. The row has a state, `running` or `done`, and a repeat that arrives while the first request runs answers `409` with the code `request_in_progress`.
 - Database specs in CI prove these rules on a real PostgreSQL, because a mock cannot prove locks.
 
 ## People and sessions
@@ -79,6 +79,7 @@ All tables live in one PostgreSQL database. Ids are UUIDs made by the service. T
 - Passwords are hashed with Argon2id, with 19 MiB of memory, 2 passes and 1 lane as the default. A setting caps the number of hashes that run at once, and the default is 2.
 - A sign in makes a new session id and deletes the session that came with the request. A password change deletes the other sessions of that admin.
 - A session has an idle limit and an absolute limit, and the service deletes expired rows. The service writes `last_seen_at` at most once a minute.
+- Failed password or code checks on the account routes of an admin are counted in `rate_counters` for the session, so a stolen session cannot guess the password or a code without a limit.
 - Failed sign ins are counted in `rate_counters` for each submitted email, in lower case, and address together. An email that is not an account counts the same way and costs the same hash work, so the answer never shows which emails are accounts. A stranger cannot lock the account of an admin, because the counter holds the address. A high daily count for one account raises an alert and blocks nothing.
 - `viewable_tickets` lists the tickets that this session may read because it created them or looked them up with the number and the email. It holds at most 20 ids.
 - A guest session may have no name, no NIM or NIP and no email. A successful ticket lookup without a session makes such a session. A lookup with a guest session adds the ticket to that session and changes nothing else. A lookup with an admin session changes no session. A failed lookup makes no session. A session without an identity can read the tickets it found and cannot create a ticket until the guest form is sent.

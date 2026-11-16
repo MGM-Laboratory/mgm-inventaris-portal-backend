@@ -140,11 +140,36 @@ jobs:
           version: 44.181.7
         run: npx --yes --package "renovate@${version}" renovate-config-validator --strict
 
+  # The spec is the contract of the API, so a spec that does not lint is found here. The rules are in redocly.yaml
+  openapi:
+    name: OpenAPI lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The Redocly CLI is a Node tool and this repository has no .nvmrc, so the job installs Node 24 on its own
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: Lint openapi.yaml
+        env:
+          # renovate: datasource=npm depName=@redocly/cli
+          version: 2.70.0
+        run: npx --yes "@redocly/cli@${version}" lint openapi.yaml
+
   # The one check that the ruleset requires, so a job can be added or renamed here without a change of the ruleset
   gate:
     name: Config gate
     if: always()
-    needs: [actionlint, zizmor, shellcheck, names, renovate]
+    needs: [actionlint, zizmor, shellcheck, names, renovate, openapi]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}

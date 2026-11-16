@@ -6,6 +6,7 @@ Thanks for taking the time to contribute. This repository is the backend of the 
 
 - Keep one pull request to one concern. A discrete change is easier to review than a bundle.
 - Add tests with new logic. A bug fix comes with a test that fails without it. When a change cannot be tested, say why in the pull request.
+- A change to a route updates `openapi.yaml` in the same pull request.
 - A test that depends on how PostgreSQL or its driver really behaves must run against a real database and not against a mock.
 - Heavy work runs in CI. Push the branch and read the results there. Run a single narrow check locally only when CI cannot explain a failure.
 - Do not commit a secret, a token or a real `.env` file. Only `.env.example` files are tracked.
@@ -26,7 +27,7 @@ Every pull request runs the checks below. The ruleset of the repository requires
 
 - **Conventional commits** reads every commit message and the title of the pull request.
 - **PR format** reads the branch name, the label, the assignee and the body.
-- **Config gate** runs actionlint, Zizmor, ShellCheck, ls-lint for file names and the Renovate validator.
+- **Config gate** runs actionlint, Zizmor, ShellCheck, ls-lint for file names, the Renovate validator and the Redocly lint of `openapi.yaml`.
 - **Security gate** summarizes dependency review, gitleaks and a Trivy filesystem scan. Dependency review fails on a finding of severity high or above, and gitleaks fails on any finding. Trivy fails on a CRITICAL or HIGH finding and also sends its findings to code scanning. For a pull request from a fork, the Trivy findings are not uploaded to code scanning, because a fork token cannot write there. They are kept for 7 days as the artifact `trivy-fs-results` of the run, and the check still fails on a CRITICAL or HIGH finding.
 - **pre-commit.ci** is not required by the ruleset, but its report should be clean. It runs repository hygiene checks on every pull request and does not push a fix.
 

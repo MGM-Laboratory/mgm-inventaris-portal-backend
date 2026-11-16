@@ -1,0 +1,3582 @@
+openapi: 3.1.0
+info:
+  title: LabMGM inventory portal API
+  version: "1"
+  summary: The API of the loan portal for the inventory of the lab
+  description: |
+    The API serves the web app of the LabMGM inventory portal. A borrower asks for items, an admin approves the request, hands the items over and takes them back.
+
+    This file is the full contract. A route that changes in the service changes here in the same pull request. The pages `docs/api.md`, `docs/data-model.md` and `docs/errors.md` of the repository explain the rules behind it.
+
+    Every path starts with `/api` and lives on the same hostname as the web app, so there is no CORS. The two health routes are the only exception. They are served on an internal port that the proxy does not route.
+
+    Bodies and answers are JSON in UTF-8. Names are camel case. A time is RFC 3339 in UTC. A pickup date and a due date are `YYYY-MM-DD` in the time zone Asia/Jakarta. The id of a ticket is its number and the id of a unit is its tag. Every other id is a UUID.
+
+    Every answer carries `Cache-Control: no-store` and an `X-Request-Id` header. A client may send its own `X-Request-Id`.
+
+    A list answers `{ "items": [...], "nextCursor": "..." }`. The query takes `limit` (default 50, most 100) and `cursor`. The field `nextCursor` is absent on the last page.
+
+    A session is a cookie. Every POST, PATCH and DELETE also needs the CSRF header, except the three routes that start a session or look a ticket up. Those three rely on the `Origin` check and on their rate limits.
+
+    Every error has the same body, and the field `code` is stable. A request over a rate limit answers 429 with the header `Retry-After`.
+  license:
+    name: GPL-3.0-only
+    identifier: GPL-3.0-only
+  contact:
+    name: LabMGM
+    url: https://github.com/MGM-Laboratory/mgm-inventaris-portal-backend
+servers:
+  - url: https://portal.example.org
+    description: The public hostname of a deployment. The web app and the API share it.
+tags:
+  - name: Health
+    description: Routes on the internal port for the proxy and for a monitor. They are not under `/api`.
+  - name: Config
+    description: The public settings of the portal.
+  - name: Session
+    description: Sign in, read and end a session.
+  - name: Catalog
+    description: The categories, the models with their quantities and the public page of a unit.
+  - name: Tickets
+    description: The routes of a borrower for the tickets of the session.
+  - name: Admin tickets
+    description: The routes of an admin for the queue and for the steps of a loan.
+  - name: Admin assets
+    description: The routes of an admin for categories, models and units.
+  - name: Admin account
+    description: The dashboard and the own account of an admin.
+security:
+  - sessionCookie: []
+paths:
+  /healthz:
+    get:
+      tags: [Health]
+      operationId: getHealth
+      summary: Say that the process runs
+      description: It answers 200 while the process runs, and it does not read the database. The proxy and the rolling update call it on the internal port.
+      security: []
+      servers:
+        - url: http://{address}
+          description: The internal address of one copy of the service. It is not under `/api` and the proxy does not route it. The address is a placeholder until the service sets it.
+          variables:
+            address:
+              default: 127.0.0.1:8081
+      responses:
+        "200":
+          description: The process runs.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+              example:
+                status: ok
+        "4XX":
+          $ref: "#/components/responses/ClientError"
+  /readyz:
+    get:
+      tags: [Health]
+      operationId: getReady
+      summary: Say that the service can do its work
+      description: It answers 200 when the database answers and 503 when it does not.
+      security: []
+      servers:
+        - url: http://{address}
+          description: The internal address of one copy of the service. It is not under `/api` and the proxy does not route it. The address is a placeholder until the service sets it.
+          variables:
+            address:
+              default: 127.0.0.1:8081
+      responses:
+        "200":
+          description: The database answers.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+              example:
+                status: ready
+        "503":
+          description: The database does not answer.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+              example:
+                status: unavailable
+        "4XX":
+          $ref: "#/components/responses/ClientError"
+
+  /api/config:
+    get:
+      tags: [Config]
+      operationId: getConfig
+      summary: Read the public settings
+      description: Anyone can read it. It holds the limits of the lab and the public address that the QR code uses.
+      security: []
+      responses:
+        "200":
+          description: The public settings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Config"
+              example:
+                publicBaseUrl: https://portal.example.org
+                limits:
+                  maxItemsPerRequest: 10
+                  minDurationDays: 1
+                  maxDurationDays: 30
+                  maxOpenTickets: 3
+        "4XX":
+          $ref: "#/components/responses/ClientError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/session/guest:
+    post:
+      tags: [Session]
+      operationId: startGuestSession
+      summary: Start a guest session
+      description: >-
+        The guest sends the name, the NIM or NIP and an email of Universitas Brawijaya.
+        The service makes a new session and ends the one that came with the request.
+        The route needs no session and no CSRF token.
+        It answers with the CSRF token in the body and sets the session cookie.
+        A limit of the number of guest sign ins for one IP address applies.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GuestSignInRequest"
+            example:
+              name: Example Borrower
+              nimNip: "000000000000000"
+              email: example@student.ub.ac.id
+      responses:
+        "201":
+          description: The session exists.
+          headers:
+            Set-Cookie:
+              $ref: "#/components/headers/SetSessionCookie"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+              examples:
+                guest:
+                  $ref: "#/components/examples/SessionGuest"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/OriginForbidden"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/session:
+    get:
+      tags: [Session]
+      operationId: getSession
+      summary: Read the session and the CSRF token
+      description: Any session can call it, also a setup session of an admin. A client calls it again to read the CSRF token after `csrf_failed`.
+      responses:
+        "200":
+          description: The session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+              examples:
+                guest:
+                  $ref: "#/components/examples/SessionGuest"
+                admin:
+                  $ref: "#/components/examples/SessionAdmin"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    delete:
+      tags: [Session]
+      operationId: endSession
+      summary: End the session
+      description: Any session can call it, also a setup session of an admin. The service deletes the session and clears the cookie.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      responses:
+        "204":
+          description: The session ended.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/admin/session:
+    post:
+      tags: [Session]
+      operationId: signInAdmin
+      summary: Sign in as an admin
+      description: >-
+        The body holds the email, the password and either a TOTP code or a recovery code.
+        The route needs no session and no CSRF token.
+        The service makes a new session and ends the one that came with the request.
+        An admin who has no TOTP yet, or whose initial password expired, gets a session of the kind `admin_setup`.
+        The use of a recovery code ends the other sessions of that admin.
+        After too many failed sign ins for one email from one IP address, that pair answers 429 for a while.
+        A limit of failed sign ins for one IP address also applies.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminSignInRequest"
+            example:
+              email: admin@example.org
+              password: example-password-only
+              totpCode: "000000"
+      responses:
+        "201":
+          description: The session exists.
+          headers:
+            Set-Cookie:
+              $ref: "#/components/headers/SetSessionCookie"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+              examples:
+                admin:
+                  $ref: "#/components/examples/SessionAdmin"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/InvalidCredentials"
+        "403":
+          $ref: "#/components/responses/OriginForbidden"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/categories:
+    get:
+      tags: [Catalog]
+      operationId: listCategories
+      summary: List the categories
+      description: A guest session or an admin session can call it.
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: A page of categories, ordered by name.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CategoryPage"
+              example:
+                items:
+                  - id: 00000000-0000-4000-8000-000000000001
+                    name: Example category
+                    tone: blue
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/catalog:
+    get:
+      tags: [Catalog]
+      operationId: listCatalog
+      summary: List the models with their quantities
+      description: >-
+        A guest session or an admin session can call it.
+        Each model shows the total, the held and the available quantity.
+        A retired model is not listed.
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+        - name: q
+          in: query
+          required: false
+          description: Only the models whose name or description contains this text. The match ignores letter case. The text has at least 2 characters.
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 100
+        - name: categoryId
+          in: query
+          required: false
+          description: Only the models of this category.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: A page of models, ordered by name.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CatalogPage"
+              examples:
+                page:
+                  $ref: "#/components/examples/CatalogPage"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/assets/{tag}:
+    get:
+      tags: [Catalog]
+      operationId: getAsset
+      summary: Read the page of one unit
+      description: >-
+        Anyone can read it, because the QR label of a unit leads here.
+        A request without an admin session gets only the tag, the status and the model.
+        The serial number, the condition, the place and the related ticket are in the answer only for an admin session.
+      security:
+        - {}
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/UnitTag"
+      responses:
+        "200":
+          description: The unit. An admin session gets the schema `AdminAsset` and every other request gets `PublicAsset`.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/AdminAsset"
+                  - $ref: "#/components/schemas/PublicAsset"
+              examples:
+                public:
+                  $ref: "#/components/examples/PublicAsset"
+                admin:
+                  $ref: "#/components/examples/AdminAsset"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/tickets:
+    post:
+      tags: [Tickets]
+      operationId: createTicket
+      summary: Create a ticket
+      description: >-
+        A guest session with an identity can call it.
+        A session with no identity answers 403 with the code `identity_required` until the guest form is sent.
+        Such a session has no name, no NIM or NIP and no email, and a lookup can make one.
+        A session with the wrong role answers 403 with the code `forbidden`.
+        The service checks the limits, makes the number and the rows, and starts the ticket as `diajukan`.
+        A field that fails a rule answers 422. That covers a retired model, more items than the limit and more open tickets for the same email or NIM or NIP than the limit.
+        A limit of the number of new tickets for one IP address applies, and every request counts.
+        A request with an `Idempotency-Key` that the session already used returns the first answer and ignores the new body.
+        A request that fills the hidden field `website` gets a normal looking answer and creates nothing.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TicketCreate"
+            example:
+              items:
+                - modelId: 00000000-0000-4000-8000-000000000002
+                  qty: 2
+              purpose: Example loan for a lab exercise.
+              pickupDate: "2026-11-20"
+              durationDays: 7
+      responses:
+        "201":
+          description: The ticket exists in the status `diajukan`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ticket"
+              examples:
+                ticket:
+                  $ref: "#/components/examples/Ticket"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/IdentityRequired"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    get:
+      tags: [Tickets]
+      operationId: listTickets
+      summary: List the tickets of the session
+      description: A guest session can call it. The list holds the tickets that the session created or found with a lookup, newest first.
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: A page of tickets.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketPage"
+              examples:
+                page:
+                  $ref: "#/components/examples/TicketPage"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/tickets/lookup:
+    post:
+      tags: [Tickets]
+      operationId: lookupTicket
+      summary: Find a ticket by its number and email
+      description: >-
+        Anyone can call it, with or without a session, and it needs no CSRF token.
+        A match returns the ticket and adds it to the session.
+        With no session, the service starts a guest session without an identity and sets its cookie.
+        A guest session keeps its identity and only gains the ticket.
+        An admin session changes in no way.
+        A failed lookup makes no session and answers 404 with the code `ticket_not_found`, which is the same answer for a wrong number and a wrong email.
+        Failed lookups count for one IP address, and also for the part of the number before its last four characters together with the email.
+      security:
+        - {}
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LookupRequest"
+            example:
+              number: MGM-2611-0001-K7QX
+              email: example@student.ub.ac.id
+      responses:
+        "200":
+          description: The ticket and the CSRF token of the session.
+          headers:
+            Set-Cookie:
+              $ref: "#/components/headers/SetSessionCookie"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LookupResult"
+              examples:
+                found:
+                  $ref: "#/components/examples/LookupResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/OriginForbidden"
+        "404":
+          $ref: "#/components/responses/TicketNotFound"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/tickets/{number}:
+    get:
+      tags: [Tickets]
+      operationId: getTicket
+      summary: Read one ticket of the session
+      description: A guest session can call it. A ticket that the session did not create or find answers 404 with the code `not_found`.
+      parameters:
+        - $ref: "#/components/parameters/TicketNumber"
+      responses:
+        "200":
+          description: The ticket.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ticket"
+              examples:
+                ticket:
+                  $ref: "#/components/examples/Ticket"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/tickets/{number}/cancel:
+    post:
+      tags: [Tickets]
+      operationId: cancelTicket
+      summary: Cancel a ticket
+      description: >-
+        A guest session can cancel a ticket of the session in the status `diajukan`.
+        Any other status answers 409 with the code `status_conflict`.
+        The request has no body.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - $ref: "#/components/parameters/TicketNumber"
+      responses:
+        "200":
+          description: The ticket in the status `dibatalkan`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ticket"
+              examples:
+                ticket:
+                  $ref: "#/components/examples/Ticket"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/admin/tickets:
+    get:
+      tags: [Admin tickets]
+      operationId: listAdminTickets
+      summary: List the queue of tickets
+      description: An admin session can call it. The list holds the tickets of every borrower, newest first, and can be filtered by status.
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+        - name: q
+          in: query
+          required: false
+          description: Only the tickets whose number, requester name or NIM or NIP contains this text. The match ignores letter case. The text has at least 2 characters.
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 100
+        - name: status
+          in: query
+          required: false
+          description: Only the tickets with this effective status. The filter uses the effective status, so `dipinjam` lists only the tickets that are not late and `terlambat` lists the late ones. The value `siap_diambil` is the dashboard key `siapDiambil`.
+          schema:
+            $ref: "#/components/schemas/EffectiveTicketStatus"
+      responses:
+        "200":
+          description: A page of tickets.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketPage"
+              examples:
+                page:
+                  $ref: "#/components/examples/TicketPage"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/admin/tickets/{number}:
+    get:
+      tags: [Admin tickets]
+      operationId: getAdminTicket
+      summary: Read any ticket
+      description: An admin session can call it. The answer adds the units that the ticket holds.
+      parameters:
+        - $ref: "#/components/parameters/TicketNumber"
+      responses:
+        "200":
+          description: The ticket.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminTicket"
+              examples:
+                ticket:
+                  $ref: "#/components/examples/AdminTicket"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/admin/tickets/{number}/decision:
+    post:
+      tags: [Admin tickets]
+      operationId: decideTicket
+      summary: Approve or reject a ticket
+      description: >-
+        An admin session can call it for a ticket in the status `diajukan`.
+        An approval moves the ticket to `disetujui` and a rejection moves it to `ditolak`.
+        The body carries the version that the admin read.
+        An approval that holds nothing, because every approved quantity is 0, answers 422 with the code `validation_failed`.
+        A stale version answers 409 with the code `version_conflict` and another status answers 409 with the code `status_conflict`.
+        Too little available stock for an approved quantity answers 409 with the code `stock_changed`.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - $ref: "#/components/parameters/TicketNumber"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DecisionRequest"
+            examples:
+              approve:
+                summary: An approval
+                value:
+                  version: 1
+                  decision: approve
+                  items:
+                    - modelId: 00000000-0000-4000-8000-000000000002
+                      approvedQty: 2
+                  durationDays: 7
+              reject:
+                summary: A rejection
+                value:
+                  version: 1
+                  decision: reject
+                  note: The items are not free on those days.
+      responses:
+        "200":
+          description: The ticket after the decision.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminTicket"
+              examples:
+                ticket:
+                  $ref: "#/components/examples/AdminTicket"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/admin/tickets/{number}/ready:
+    post:
+      tags: [Admin tickets]
+      operationId: markTicketReady
+      summary: Mark a ticket ready for pickup
+      description: >-
+        An admin session can call it for a ticket in the status `disetujui`.
+        The ticket moves to `siap_diambil`.
+        A stale version answers 409 with the code `version_conflict` and another status answers 409 with the code `status_conflict`.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - $ref: "#/components/parameters/TicketNumber"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VersionRequest"
+            example:
+              version: 2
+      responses:
+        "200":
+          description: The ticket in the status `siap_diambil`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminTicket"
+              examples:
+                ticket:
+                  $ref: "#/components/examples/AdminTicket"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/admin/tickets/{number}/handover:
+    post:
+      tags: [Admin tickets]
+      operationId: handOverTicket
+      summary: Hand the units over
+      description: >-
+        An admin session can call it for a ticket in the status `siap_diambil`.
+        The admin scans the QR label of each unit and posts the tags, exactly the approved quantity for each model.
+        The ticket moves to `dipinjam`.
+        A stale version answers 409 with the code `version_conflict` and another status answers 409 with the code `status_conflict`.
+        A unit that is not active, not of the right model or already in an open ticket answers 409 with the code `unit_unavailable`.
+        A stock that fell below the approved quantity since the approval, for example after a unit was lost, answers 409 with the code `stock_changed`.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - $ref: "#/components/parameters/TicketNumber"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HandoverRequest"
+            example:
+              version: 3
+              tags:
+                - MGM-VRQ-001
+                - MGM-VRQ-002
+      responses:
+        "200":
+          description: The ticket in the status `dipinjam`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminTicket"
+              examples:
+                ticket:
+                  $ref: "#/components/examples/AdminTicket"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/admin/tickets/{number}/return:
+    post:
+      tags: [Admin tickets]
+      operationId: returnTicket
+      summary: Take the units back
+      description: >-
+        An admin session can call it for a ticket in the status `dipinjam`, also when it is late.
+        The body names every unit that the ticket holds with an outcome.
+        The return is all or nothing and runs in one transaction.
+        The ticket moves to `dikembalikan`, and a unit with the outcome `maintenance` or `lost` changes its lifecycle.
+        A stale version answers 409 with the code `version_conflict` and another status answers 409 with the code `status_conflict`.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - $ref: "#/components/parameters/TicketNumber"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReturnRequest"
+            example:
+              version: 4
+              units:
+                - tag: MGM-VRQ-001
+                  outcome: ok
+                - tag: MGM-VRQ-002
+                  outcome: lost
+                  note: The unit did not come back.
+      responses:
+        "200":
+          description: The ticket in the status `dikembalikan`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminTicket"
+              examples:
+                ticket:
+                  $ref: "#/components/examples/AdminTicket"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/admin/tickets/{number}/cancel:
+    post:
+      tags: [Admin tickets]
+      operationId: cancelAdminTicket
+      summary: Cancel an approved ticket with a note
+      description: >-
+        An admin session can call it for a ticket in the status `disetujui` or `siap_diambil`.
+        The ticket moves to `dibatalkan` and releases its hold.
+        A ticket that nobody collects is closed this way.
+        A stale version answers 409 with the code `version_conflict` and another status answers 409 with the code `status_conflict`.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - $ref: "#/components/parameters/TicketNumber"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminCancelRequest"
+            example:
+              version: 3
+              note: Nobody collected the items.
+      responses:
+        "200":
+          description: The ticket in the status `dibatalkan`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminTicket"
+              examples:
+                ticket:
+                  $ref: "#/components/examples/AdminTicket"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/admin/dashboard:
+    get:
+      tags: [Admin account]
+      operationId: getDashboard
+      summary: Read the counts for the dashboard
+      description: An admin session can call it. The ticket counts are for each effective status, so `dipinjam` does not count late tickets and `terlambat` counts them. The key `siapDiambil` counts the status `siap_diambil`.
+      responses:
+        "200":
+          description: The counts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardCounts"
+              example:
+                tickets:
+                  diajukan: 2
+                  disetujui: 1
+                  siapDiambil: 0
+                  dipinjam: 3
+                  terlambat: 1
+                units:
+                  available: 20
+                  borrowed: 4
+                  maintenance: 1
+                  lost: 0
+                  retired: 0
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/admin/categories:
+    get:
+      tags: [Admin assets]
+      operationId: listAdminCategories
+      summary: List the categories
+      description: An admin session can call it.
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: A page of categories, ordered by name.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CategoryPage"
+              example:
+                items:
+                  - id: 00000000-0000-4000-8000-000000000001
+                    name: Example category
+                    tone: blue
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    post:
+      tags: [Admin assets]
+      operationId: createCategory
+      summary: Add a category
+      description: An admin session can call it. A name that another category uses answers 409 with the code `duplicate`.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CategoryInput"
+            example:
+              name: Example category
+              tone: blue
+      responses:
+        "201":
+          description: The category exists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Category"
+              example:
+                id: 00000000-0000-4000-8000-000000000001
+                name: Example category
+                tone: blue
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/admin/models:
+    get:
+      tags: [Admin assets]
+      operationId: listAdminModels
+      summary: List the models
+      description: An admin session can call it. A retired model is listed only when `includeRetired` is true.
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+        - name: q
+          in: query
+          required: false
+          description: Only the models whose name contains this text. The match ignores letter case. The text has at least 2 characters.
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 100
+        - name: categoryId
+          in: query
+          required: false
+          description: Only the models of this category.
+          schema:
+            type: string
+            format: uuid
+        - name: includeRetired
+          in: query
+          required: false
+          description: True lists the retired models too.
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: A page of models, ordered by name.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelPage"
+              examples:
+                page:
+                  $ref: "#/components/examples/ModelPage"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    post:
+      tags: [Admin assets]
+      operationId: createModel
+      summary: Add a model
+      description: >-
+        An admin session can call it.
+        A name or a prefix that another model uses answers 409 with the code `duplicate`.
+        A new model has no units, so its quantities are 0.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ModelInput"
+            example:
+              name: Example headset
+              categoryId: 00000000-0000-4000-8000-000000000001
+              description: A headset for an example prototype.
+              prefix: VRQ
+      responses:
+        "201":
+          description: The model exists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Model"
+              examples:
+                model:
+                  $ref: "#/components/examples/Model"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/admin/models/{id}:
+    patch:
+      tags: [Admin assets]
+      operationId: updateModel
+      summary: Change a model
+      description: >-
+        An admin session can call it.
+        A name that another model uses answers 409 with the code `duplicate`.
+        Retiring a model that an open ticket asks for answers 409 with the code `status_conflict`.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - $ref: "#/components/parameters/ModelId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ModelPatch"
+            example:
+              description: A new text for the model.
+      responses:
+        "200":
+          description: The model after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Model"
+              examples:
+                model:
+                  $ref: "#/components/examples/Model"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    delete:
+      tags: [Admin assets]
+      operationId: deleteModel
+      summary: Delete a model for good
+      description: >-
+        An admin session can call it.
+        A model is normally retired and not deleted.
+        A permanent delete works only for a model that no ticket has ever used.
+        Otherwise the service answers 409 with the code `status_conflict`.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - $ref: "#/components/parameters/ModelId"
+      responses:
+        "204":
+          description: The model is gone.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/admin/models/{id}/units:
+    post:
+      tags: [Admin assets]
+      operationId: createUnits
+      summary: Add one to twenty units to a model
+      description: >-
+        An admin session can call it.
+        The service locks the model row and makes the tags in order, so two admins never get the same number.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - $ref: "#/components/parameters/ModelId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UnitInput"
+            example:
+              count: 2
+              condition: Good
+              place: Example shelf
+      responses:
+        "201":
+          description: The new units, in the order of their tags.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnitList"
+              examples:
+                units:
+                  $ref: "#/components/examples/UnitList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/admin/units:
+    get:
+      tags: [Admin assets]
+      operationId: listUnits
+      summary: List the units
+      description: An admin session can call it.
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+        - name: q
+          in: query
+          required: false
+          description: Only the units whose tag, model name or serial number contains this text. The match ignores letter case. The text has at least 2 characters.
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 100
+        - name: modelId
+          in: query
+          required: false
+          description: Only the units of this model.
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          required: false
+          description: Only the units with this status.
+          schema:
+            $ref: "#/components/schemas/UnitStatus"
+      responses:
+        "200":
+          description: A page of units, ordered by tag.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnitPage"
+              examples:
+                page:
+                  $ref: "#/components/examples/UnitPage"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/admin/units/{tag}:
+    get:
+      tags: [Admin assets]
+      operationId: getUnit
+      summary: Read one unit
+      description: An admin session can call it.
+      parameters:
+        - $ref: "#/components/parameters/UnitTag"
+      responses:
+        "200":
+          description: The unit.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Unit"
+              examples:
+                unit:
+                  $ref: "#/components/examples/Unit"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    patch:
+      tags: [Admin assets]
+      operationId: updateUnit
+      summary: Change the details of a unit
+      description: >-
+        An admin session can call it.
+        A serial number that another unit uses answers 409 with the code `duplicate`.
+        A change of the lifecycle has its own route.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - $ref: "#/components/parameters/UnitTag"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UnitPatch"
+            example:
+              condition: A small scratch
+      responses:
+        "200":
+          description: The unit after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Unit"
+              examples:
+                unit:
+                  $ref: "#/components/examples/Unit"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    delete:
+      tags: [Admin assets]
+      operationId: deleteUnit
+      summary: Delete a unit for good
+      description: >-
+        An admin session can call it.
+        A unit is normally retired and not deleted.
+        A permanent delete works only for a unit that no ticket has ever used.
+        Otherwise the service answers 409 with the code `status_conflict`.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - $ref: "#/components/parameters/UnitTag"
+      responses:
+        "204":
+          description: The unit is gone.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/admin/units/{tag}/lifecycle:
+    post:
+      tags: [Admin assets]
+      operationId: changeUnitLifecycle
+      summary: Change the lifecycle of a unit
+      description: >-
+        An admin session can call it.
+        The change writes an event in the history of the unit.
+        A unit in an open ticket cannot leave `active`, and the service answers 409 with the code `unit_held`.
+        A change that would leave less stock than is held answers 409 with the code `stock_changed`.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      parameters:
+        - $ref: "#/components/parameters/UnitTag"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LifecycleChange"
+            example:
+              lifecycle: maintenance
+              note: The screen is cracked.
+      responses:
+        "200":
+          description: The unit after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Unit"
+              examples:
+                unit:
+                  $ref: "#/components/examples/Unit"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/admin/units/{tag}/events:
+    get:
+      tags: [Admin assets]
+      operationId: listUnitEvents
+      summary: Read the history of one unit
+      description: An admin session can call it. The list is newest first.
+      parameters:
+        - $ref: "#/components/parameters/UnitTag"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: A page of events.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnitEventPage"
+              examples:
+                page:
+                  $ref: "#/components/examples/UnitEventPage"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/admin/unit-events:
+    get:
+      tags: [Admin assets]
+      operationId: listAllUnitEvents
+      summary: Read the history of all units
+      description: An admin session can call it. The list is newest first.
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: A page of events.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnitEventPage"
+              examples:
+                page:
+                  $ref: "#/components/examples/UnitEventPage"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/admin/me:
+    get:
+      tags: [Admin account]
+      operationId: getAdminMe
+      summary: Read the own account
+      description: An admin session can call it. A setup session cannot.
+      responses:
+        "200":
+          description: The account.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminProfile"
+              example:
+                id: 00000000-0000-4000-8000-000000000009
+                name: Example Admin
+                email: admin@example.org
+                totpEnabled: true
+                passwordExpiresAt: null
+                recoveryCodesLeft: 8
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/admin/me/password:
+    post:
+      tags: [Admin account]
+      operationId: changeAdminPassword
+      summary: Set a new password
+      description: >-
+        An admin session or a setup session can call it.
+        It needs the current password, which is the one use initial password for a new admin.
+        An admin session also needs a valid TOTP code.
+        The change deletes the other sessions of the admin.
+        A wrong current password or code answers 401 with the code `invalid_credentials`.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordChangeRequest"
+            example:
+              currentPassword: example-old-password
+              newPassword: example-new-password-only
+      responses:
+        "204":
+          description: The password changed.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/UnauthenticatedOrCredentials"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/admin/me/totp:
+    post:
+      tags: [Admin account]
+      operationId: enrollAdminTotp
+      summary: Enroll TOTP
+      description: >-
+        An admin session or a setup session can call it.
+        A call without `confirmCode` starts the enrollment and answers with the new secret.
+        A call with the `confirmCode` of that secret finishes the enrollment and answers with the first recovery codes.
+        A wrong password or code answers 401 with the code `invalid_credentials`.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TotpEnrollRequest"
+            example:
+              currentPassword: example-new-password-only
+              confirmCode: "000000"
+      responses:
+        "200":
+          description: The secret of a started enrollment, or the recovery codes of a finished one.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/TotpEnrollment"
+                  - $ref: "#/components/schemas/RecoveryCodes"
+              examples:
+                started:
+                  summary: A call without confirmCode
+                  value:
+                    secret: EXAMPLEEXAMPLEEX
+                    otpauthUri: otpauth://totp/Example?secret=EXAMPLEEXAMPLEEX
+                finished:
+                  summary: A call with confirmCode
+                  value:
+                    recoveryCodes: [example-code-1, example-code-2]
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/UnauthenticatedOrCredentials"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/admin/me/recovery-codes:
+    post:
+      tags: [Admin account]
+      operationId: renewAdminRecoveryCodes
+      summary: Make new recovery codes
+      description: >-
+        An admin session can call it.
+        It needs the current password and a valid TOTP code.
+        The new codes replace the old ones.
+        A wrong password or code answers 401 with the code `invalid_credentials`.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecoveryCodesRequest"
+            example:
+              currentPassword: example-new-password-only
+              totpCode: "000000"
+      responses:
+        "200":
+          description: The new recovery codes. The service shows them once.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecoveryCodes"
+              example:
+                recoveryCodes: [example-code-1, example-code-2]
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/UnauthenticatedOrCredentials"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-mgm_session
+      description: >-
+        A random session value in a cookie that is HttpOnly, Secure and SameSite=Lax with the path `/`.
+        The service stores only its hash. By default a guest session lasts 12 hours idle and 7 days at most.
+        An admin session lasts 30 minutes idle and 8 hours at most.
+        A setup session of an admin lasts 15 minutes.
+    csrfToken:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+      description: >-
+        The `csrfToken` of the session, read from the body of a sign in or of `GET /api/session`.
+        Every POST, PATCH and DELETE needs it, except the three routes that start a session or look a ticket up.
+        Any other write without the right token answers 403 with the code `csrf_failed`.
+        A write whose `Origin` header names another host answers 403 with the code `origin_not_allowed`.
+        A write with no `Origin` header is accepted only when `Sec-Fetch-Site` is `same-origin`.
+
+  headers:
+    XRequestId:
+      description: The request id. A client may send its own `X-Request-Id`, and the service otherwise makes one. The same value is in the `requestId` of an error body.
+      schema:
+        type: string
+        maxLength: 128
+    RetryAfter:
+      description: Seconds to wait before the next request.
+      schema:
+        type: integer
+        minimum: 1
+    SetSessionCookie:
+      description: The new session cookie. A sign in or a lookup that starts a session makes a new value and ends the session that came with the request.
+      schema:
+        type: string
+
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: The most items in one page.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: The `nextCursor` of the previous page. Leave it out for the first page.
+      schema:
+        $ref: "#/components/schemas/Cursor"
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: >-
+        A value that the client makes for one ticket request, such as a random identifier.
+        The service stores it for the session with the answer for 24 hours.
+        A repeat with the same key returns the first answer and ignores the new body.
+        A repeat that arrives while the first request still runs answers 409 with the code `request_in_progress`.
+      schema:
+        type: string
+        pattern: "^[A-Za-z0-9_-]{8,64}$"
+        examples:
+          - c0a80101-example-key
+    TicketNumber:
+      name: number
+      in: path
+      required: true
+      description: The number of the ticket.
+      schema:
+        $ref: "#/components/schemas/TicketNumber"
+    UnitTag:
+      name: tag
+      in: path
+      required: true
+      description: The tag of the unit, which is the text of its QR label.
+      schema:
+        $ref: "#/components/schemas/UnitTag"
+    ModelId:
+      name: id
+      in: path
+      required: true
+      description: The identifier of the model.
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    ClientError:
+      description: The service cannot take the request, for example because the method is wrong.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: bad_request
+              message: The request cannot be taken.
+              requestId: c0a80101-example-request
+    BadRequest:
+      description: The body cannot be read. It is not valid JSON or it is over the size limit.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: bad_request
+              message: The body is not valid JSON.
+              requestId: c0a80101-example-request
+    Unauthenticated:
+      description: The request has no session, or the session expired.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: session_expired
+              message: The session expired. Sign in again.
+              requestId: c0a80101-example-request
+    Forbidden:
+      description: The session has not the role that the route needs, or the CSRF check or the origin check failed.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            forbidden:
+              summary: The role is wrong
+              value:
+                error:
+                  code: forbidden
+                  message: This route needs an admin session.
+                  requestId: c0a80101-example-request
+            csrfFailed:
+              summary: The CSRF token is missing or wrong
+              value:
+                error:
+                  code: csrf_failed
+                  message: The CSRF token is missing or wrong.
+                  requestId: c0a80101-example-request
+            originNotAllowed:
+              summary: The Origin header names another host
+              value:
+                error:
+                  code: origin_not_allowed
+                  message: The origin of the request is not allowed.
+                  requestId: c0a80101-example-request
+    OriginForbidden:
+      description: The origin check failed. This route carries no CSRF token, so the origin check is its only check of this kind.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            originNotAllowed:
+              summary: The Origin header names another host
+              value:
+                error:
+                  code: origin_not_allowed
+                  message: The origin of the request is not allowed.
+                  requestId: c0a80101-example-request
+    IdentityRequired:
+      description: The session has no identity, or the role is wrong, or the CSRF check or the origin check failed.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            identityRequired:
+              summary: The session has no name, no NIM or NIP and no email
+              value:
+                error:
+                  code: identity_required
+                  message: Send the guest form before you create a ticket.
+                  requestId: c0a80101-example-request
+            csrfFailed:
+              summary: The CSRF token is missing or wrong
+              value:
+                error:
+                  code: csrf_failed
+                  message: The CSRF token is missing or wrong.
+                  requestId: c0a80101-example-request
+            forbidden:
+              summary: The role is wrong
+              value:
+                error:
+                  code: forbidden
+                  message: This route needs a guest session.
+                  requestId: c0a80101-example-request
+    InvalidCredentials:
+      description: The email, the password or the code is wrong. The answer is the same for every wrong value.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            invalidCredentials:
+              summary: A wrong value
+              value:
+                error:
+                  code: invalid_credentials
+                  message: The email, the password or the code is wrong.
+                  requestId: c0a80101-example-request
+    UnauthenticatedOrCredentials:
+      description: The session expired or is missing, or the current password or the code is wrong.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            sessionExpired:
+              summary: The session expired
+              value:
+                error:
+                  code: session_expired
+                  message: The session expired. Sign in again.
+                  requestId: c0a80101-example-request
+            invalidCredentials:
+              summary: A wrong password or code
+              value:
+                error:
+                  code: invalid_credentials
+                  message: The password or the code is wrong.
+                  requestId: c0a80101-example-request
+    TicketNotFound:
+      description: The number and the email do not match a ticket. The answer is the same for a wrong number and a wrong email.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            ticketNotFound:
+              summary: No match
+              value:
+                error:
+                  code: ticket_not_found
+                  message: No ticket matches the number and the email.
+                  requestId: c0a80101-example-request
+    NotFound:
+      description: The thing does not exist, or the session may not see it.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: not_found
+              message: Not found.
+              requestId: c0a80101-example-request
+    Conflict:
+      description: The state changed under the request. The code says which rule stopped it.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: stock_changed
+              message: The stock of one item changed. Reload and try again.
+              details:
+                - field: items[0].qty
+                  code: too_many
+                  message: At most 2 are available.
+              requestId: c0a80101-example-request
+    ValidationFailed:
+      description: A field fails a rule. The list `details` has one entry for each field.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: validation_failed
+              message: One or more fields are not valid.
+              details:
+                - field: email
+                  code: not_ub_email
+                  message: Use an email of Universitas Brawijaya.
+              requestId: c0a80101-example-request
+    RateLimited:
+      description: A rate limit is over. This also holds after too many failed admin sign ins.
+      headers:
+        Retry-After:
+          $ref: "#/components/headers/RetryAfter"
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: rate_limited
+              message: Too many requests. Try again later.
+              requestId: c0a80101-example-request
+    InternalError:
+      description: A bug or an unexpected failure.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: internal
+              message: Something went wrong. Give the request id to a maintainer.
+              requestId: c0a80101-example-request
+    Unavailable:
+      description: The database is not reachable.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: unavailable
+              message: The service cannot reach its database. Try again later.
+              requestId: c0a80101-example-request
+
+  schemas:
+    # ---- errors and pages ----
+    ErrorCode:
+      type: string
+      description: A stable code that a client branches on. The list is the same as in `docs/errors.md`.
+      enum:
+        - bad_request
+        - unauthenticated
+        - session_expired
+        - invalid_credentials
+        - forbidden
+        - csrf_failed
+        - origin_not_allowed
+        - identity_required
+        - not_found
+        - ticket_not_found
+        - stock_changed
+        - version_conflict
+        - status_conflict
+        - unit_held
+        - unit_unavailable
+        - duplicate
+        - request_in_progress
+        - validation_failed
+        - rate_limited
+        - internal
+        - unavailable
+    ErrorDetail:
+      type: object
+      description: One field that failed a rule.
+      required: [field, code, message]
+      properties:
+        field:
+          type: string
+          description: The path of the field in the body, such as `items[0].qty`.
+          examples:
+            - items[0].qty
+        code:
+          type: string
+          description: A short word such as `required`, `too_long`, `too_many`, `invalid_format`, `not_ub_email` or `out_of_range`.
+          examples:
+            - too_many
+        message:
+          type: string
+          description: A text for people. It may change.
+    ErrorBody:
+      type: object
+      required: [code, message, requestId]
+      properties:
+        code:
+          $ref: "#/components/schemas/ErrorCode"
+        message:
+          type: string
+          description: A text for people. It may change, so a client never branches on it.
+        details:
+          type: array
+          description: One entry for each field that failed. Only the code `validation_failed` and a few conflict codes carry it.
+          items:
+            $ref: "#/components/schemas/ErrorDetail"
+        requestId:
+          type: string
+          description: The request id of the failed request. Give it to a maintainer.
+    Error:
+      type: object
+      description: The body of every error answer.
+      required: [error]
+      properties:
+        error:
+          $ref: "#/components/schemas/ErrorBody"
+    Cursor:
+      type: string
+      description: An opaque value that the service made. Send it back unchanged.
+      minLength: 1
+      maxLength: 512
+    Page:
+      type: object
+      description: The shape of every list answer. A typed page below adds the type of its items.
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+        nextCursor:
+          $ref: "#/components/schemas/Cursor"
+
+    # ---- values that many bodies share ----
+    TicketNumber:
+      type: string
+      description: The number of a ticket. The part after the month is the running number of the month, and the last four characters are random and act as a secret.
+      pattern: "^MGM-[0-9]{4}-[0-9]{4}-[A-HJ-NP-Z2-9]{4}$"
+      examples:
+        - MGM-2611-0001-K7QX
+    UnitTag:
+      type: string
+      description: The tag of a unit. It never changes and is never used again.
+      pattern: "^MGM-[A-Z0-9]{2,6}-[0-9]{3,}$"
+      examples:
+        - MGM-VRQ-001
+    UbEmail:
+      type: string
+      description: An email whose domain is `ub.ac.id` or ends in `.ub.ac.id`. The service compares it in lower case.
+      maxLength: 254
+      pattern: "^[^\\s@]+@([A-Za-z0-9-]+\\.)*[Uu][Bb]\\.[Aa][Cc]\\.[Ii][Dd]$"
+      examples:
+        - example@student.ub.ac.id
+    PersonName:
+      type: string
+      description: A name between 3 and 100 characters after the spaces at both ends are removed.
+      minLength: 3
+      maxLength: 100
+      examples:
+        - Example Borrower
+    NimNip:
+      type: string
+      description: A NIM for a student, or a NIP for a lecturer or a staff member. It has 8 to 20 letters or digits.
+      pattern: "^[0-9A-Za-z]{8,20}$"
+      examples:
+        - "000000000000000"
+    Note:
+      type: string
+      description: A free text of 1 to 500 characters after the spaces at both ends are removed.
+      minLength: 1
+      maxLength: 500
+      examples:
+        - The unit is for an example loan.
+    Version:
+      type: integer
+      description: The version of the ticket that the client read. It starts at 1 and grows with each change. A stale value answers 409 with the code `version_conflict`.
+      minimum: 1
+      examples:
+        - 3
+    TicketStatus:
+      type: string
+      description: The stored status of a ticket.
+      enum: [diajukan, disetujui, siap_diambil, dipinjam, dikembalikan, dibatalkan, ditolak]
+    EffectiveTicketStatus:
+      type: string
+      description: The status that a client shows. It is the stored status, except that a `dipinjam` ticket past its due date shows `terlambat`. The status `terlambat` is never stored.
+      enum: [diajukan, disetujui, siap_diambil, dipinjam, terlambat, dikembalikan, dibatalkan, ditolak]
+    UnitLifecycle:
+      type: string
+      description: The state that an admin sets. Only an `active` unit can be loaned.
+      enum: [active, maintenance, lost, retired]
+    UnitStatus:
+      type: string
+      description: >-
+        The one status that a unit shows.
+        It is `maintenance`, `lost` or `retired` for the lifecycle of the same name.
+        An active unit is `borrowed` while it is in an open row of a ticket and `available` otherwise.
+        A unit has no reserved status, because units are chosen at handover.
+      enum: [available, borrowed, maintenance, lost, retired]
+    ReturnOutcome:
+      type: string
+      description: What an admin finds when a unit comes back. `maintenance` and `lost` change the lifecycle of the unit.
+      enum: [ok, maintenance, lost]
+    DecisionKind:
+      type: string
+      enum: [approve, reject]
+    ActorKind:
+      type: string
+      description: Who made a status change of a ticket.
+      enum: [guest, admin]
+    SessionKind:
+      type: string
+      description: >-
+        `guest` is a guest session, with or without an identity.
+        `admin` is a full admin session.
+        `admin_setup` is a session of 15 minutes for an admin who has no TOTP yet or whose initial password expired.
+        It can call only the setup routes under `/api/admin/me`, `GET /api/session` and `DELETE /api/session`.
+      enum: [guest, admin, admin_setup]
+    Tone:
+      type: string
+      description: The color family of a category tile.
+      enum: [blue, yellow, red, green]
+    UnitEventAction:
+      type: string
+      enum: [added, updated, maintenance, lost, retired, reactivated, handed_over, returned]
+
+    # ---- config and sessions ----
+    Limits:
+      type: object
+      description: The limits of the lab. They are settings, so the values here are examples.
+      required: [maxItemsPerRequest, minDurationDays, maxDurationDays, maxOpenTickets]
+      properties:
+        maxItemsPerRequest:
+          type: integer
+          description: The most items in one request, all quantities added.
+          examples:
+            - 10
+        minDurationDays:
+          type: integer
+          examples:
+            - 1
+        maxDurationDays:
+          type: integer
+          examples:
+            - 30
+        maxOpenTickets:
+          type: integer
+          description: The most open tickets for one email or for one NIM or NIP.
+          examples:
+            - 3
+    Config:
+      type: object
+      required: [publicBaseUrl, limits]
+      properties:
+        publicBaseUrl:
+          type: string
+          format: uri
+          description: The public address of the portal without a trailing slash. A QR label holds this address followed by the path of the page of the unit.
+          examples:
+            - https://portal.example.org
+        limits:
+          $ref: "#/components/schemas/Limits"
+    GuestIdentity:
+      type: object
+      description: What a guest typed in the guest form. It is not an account.
+      required: [name, nimNip, email]
+      properties:
+        name:
+          $ref: "#/components/schemas/PersonName"
+        nimNip:
+          $ref: "#/components/schemas/NimNip"
+        email:
+          $ref: "#/components/schemas/UbEmail"
+    GuestSignInRequest:
+      description: The name, the NIM or NIP and the email of the guest, and the hidden field of the form. The email has to be an email of Universitas Brawijaya.
+      allOf:
+        - $ref: "#/components/schemas/GuestIdentity"
+        - type: object
+          properties:
+            website:
+              type: string
+              description: A hidden field of the form. The client leaves it empty. A request that fills it gets a normal looking answer and creates nothing.
+    AdminSummary:
+      type: object
+      required: [id, name, email]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          examples:
+            - Example Admin
+        email:
+          type: string
+          format: email
+          examples:
+            - admin@example.org
+    Session:
+      type: object
+      description: A session and its CSRF token.
+      required: [kind, csrfToken, expiresAt]
+      properties:
+        kind:
+          $ref: "#/components/schemas/SessionKind"
+        csrfToken:
+          type: string
+          description: Send it in the header `X-CSRF-Token` on every POST, PATCH and DELETE.
+        expiresAt:
+          type: string
+          format: date-time
+          description: The moment of the absolute limit of the session.
+        idleExpiresAt:
+          type: string
+          format: date-time
+          description: The moment at which the session ends when nothing uses it.
+        identity:
+          $ref: "#/components/schemas/GuestIdentity"
+        admin:
+          $ref: "#/components/schemas/AdminSummary"
+    AdminSignInRequest:
+      type: object
+      description: >-
+        The email, the password and either a TOTP code or a recovery code.
+        An admin who has no TOTP yet sends neither code.
+        The service answers `invalid_credentials` for any wrong or missing value, so the answer does not say which one is wrong.
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+          examples:
+            - admin@example.org
+        password:
+          type: string
+          maxLength: 128
+          writeOnly: true
+        totpCode:
+          type: string
+          pattern: "^[0-9]{6}$"
+          writeOnly: true
+          examples:
+            - "000000"
+        recoveryCode:
+          type: string
+          maxLength: 64
+          writeOnly: true
+    LookupRequest:
+      type: object
+      required: [number, email]
+      properties:
+        number:
+          $ref: "#/components/schemas/TicketNumber"
+        email:
+          type: string
+          format: email
+          maxLength: 254
+          description: The email of the requester. The service compares it in lower case.
+          examples:
+            - example@student.ub.ac.id
+    LookupResult:
+      type: object
+      required: [csrfToken, ticket]
+      properties:
+        csrfToken:
+          type: string
+          description: The CSRF token of the session that the request now has.
+        ticket:
+          $ref: "#/components/schemas/Ticket"
+
+    # ---- catalog ----
+    Category:
+      type: object
+      required: [id, name, tone]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 2
+          maxLength: 60
+          examples:
+            - Example category
+        tone:
+          $ref: "#/components/schemas/Tone"
+    CategoryInput:
+      type: object
+      required: [name, tone]
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 60
+          description: A name that no other category has. A repeat answers 409 with the code `duplicate`.
+        tone:
+          $ref: "#/components/schemas/Tone"
+    CategoryPage:
+      allOf:
+        - $ref: "#/components/schemas/Page"
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/Category"
+    CatalogModel:
+      type: object
+      description: A kind of item with its quantities. The available quantity is never negative.
+      required: [id, name, categoryId, description, total, held, available]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          examples:
+            - Example headset
+        categoryId:
+          type: string
+          format: uuid
+        description:
+          type: string
+          maxLength: 500
+        total:
+          type: integer
+          minimum: 0
+          description: The count of units with the lifecycle `active`.
+        held:
+          type: integer
+          minimum: 0
+          description: The sum of the approved quantities of the tickets in the status `disetujui`, `siap_diambil` or `dipinjam`.
+        available:
+          type: integer
+          minimum: 0
+          description: The total minus the held quantity, and 0 when that is negative.
+    CatalogPage:
+      allOf:
+        - $ref: "#/components/schemas/Page"
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/CatalogModel"
+    Model:
+      description: A model as an admin sees it.
+      allOf:
+        - $ref: "#/components/schemas/CatalogModel"
+        - type: object
+          required: [prefix, retiredAt]
+          properties:
+            prefix:
+              type: string
+              pattern: "^[A-Z0-9]{2,6}$"
+              description: The part of the unit tags of this model. It never changes.
+              examples:
+                - VRQ
+            retiredAt:
+              type:
+                - string
+                - "null"
+              format: date-time
+              description: The moment the model was retired, or null.
+    ModelPage:
+      allOf:
+        - $ref: "#/components/schemas/Page"
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/Model"
+    ModelInput:
+      type: object
+      required: [name, categoryId, prefix]
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+          description: A name that no other model has. A repeat answers 409 with the code `duplicate`.
+        categoryId:
+          type: string
+          format: uuid
+        description:
+          type: string
+          maxLength: 500
+          default: ""
+        prefix:
+          type: string
+          pattern: "^[A-Z0-9]{2,6}$"
+          description: The part of the unit tags of this model, for example `VRQ` for `MGM-VRQ-001`. A prefix that another model uses answers 409 with the code `duplicate`.
+    ModelPatch:
+      type: object
+      description: >-
+        The fields to change. A model cannot change its prefix.
+        Setting `retired` to true answers 409 with the code `status_conflict` while a ticket in the status `diajukan`, `disetujui`, `siap_diambil` or `dipinjam` asks for the model.
+      minProperties: 1
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+        categoryId:
+          type: string
+          format: uuid
+        description:
+          type: string
+          maxLength: 500
+        retired:
+          type: boolean
+          description: True retires the model and false makes it active again.
+
+    # ---- units ----
+    Unit:
+      type: object
+      description: A unit as an admin sees it.
+      required: [tag, modelId, modelName, serial, condition, place, lifecycle, lifecycleNote, status, createdAt]
+      properties:
+        tag:
+          $ref: "#/components/schemas/UnitTag"
+        modelId:
+          type: string
+          format: uuid
+        modelName:
+          type: string
+        serial:
+          type:
+            - string
+            - "null"
+          description: The serial number, or null when the unit has none.
+        condition:
+          type: string
+          examples:
+            - Good
+        place:
+          type: string
+          description: The place of the unit in the lab.
+          examples:
+            - Example shelf
+        lifecycle:
+          $ref: "#/components/schemas/UnitLifecycle"
+        lifecycleNote:
+          type:
+            - string
+            - "null"
+        status:
+          $ref: "#/components/schemas/UnitStatus"
+        openTicketNumber:
+          description: The number of the ticket that holds the unit now. It is absent when no open ticket holds it.
+          $ref: "#/components/schemas/TicketNumber"
+        createdAt:
+          type: string
+          format: date-time
+    UnitPage:
+      allOf:
+        - $ref: "#/components/schemas/Page"
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/Unit"
+    UnitList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Unit"
+    UnitInput:
+      type: object
+      description: >-
+        One to twenty units of one model.
+        The service makes the tags in the order of the counter of the model.
+        A serial number is allowed only when `count` is 1, because a serial number is unique, so a request with `count` above 1 leaves `serial` out.
+      required: [count, condition, place]
+      if:
+        required: [count]
+        properties:
+          count:
+            minimum: 2
+      then:
+        not:
+          required: [serial]
+          properties:
+            serial:
+              type:
+                - string
+                - "null"
+      properties:
+        count:
+          type: integer
+          minimum: 1
+          maximum: 20
+        serial:
+          type:
+            - string
+            - "null"
+          maxLength: 100
+          pattern: "^(.{3,100})?$"
+          description: The serial number, with 3 to 100 characters. Leave it out when `count` is above 1. An empty string or null means no serial number. A serial that another unit uses answers 409 with the code `duplicate`.
+        condition:
+          type: string
+          minLength: 2
+          maxLength: 200
+        place:
+          type: string
+          minLength: 2
+          maxLength: 200
+    UnitPatch:
+      type: object
+      description: The fields to change. A unit cannot change its model or its tag. An empty string or null as the serial number is stored as null.
+      minProperties: 1
+      properties:
+        serial:
+          type:
+            - string
+            - "null"
+          maxLength: 100
+          pattern: "^(.{3,100})?$"
+          description: The serial number, with 3 to 100 characters. An empty string or null means no serial number and clears it.
+        condition:
+          type: string
+          minLength: 2
+          maxLength: 200
+        place:
+          type: string
+          minLength: 2
+          maxLength: 200
+    LifecycleChange:
+      type: object
+      description: >-
+        A change of the lifecycle of a unit.
+        A change to `lost` or `retired` needs a note.
+        A unit in an open ticket cannot leave `active`, and the service answers 409 with the code `unit_held`.
+        A change that would leave less stock than is held answers 409 with the code `stock_changed`.
+      required: [lifecycle]
+      if:
+        required: [lifecycle]
+        properties:
+          lifecycle:
+            enum: [lost, retired]
+      then:
+        required: [note]
+        properties:
+          lifecycle:
+            $ref: "#/components/schemas/UnitLifecycle"
+          note:
+            $ref: "#/components/schemas/Note"
+      properties:
+        lifecycle:
+          $ref: "#/components/schemas/UnitLifecycle"
+        note:
+          $ref: "#/components/schemas/Note"
+    UnitEvent:
+      type: object
+      required: [id, tag, at, action, adminName, note, ticketNumber]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tag:
+          $ref: "#/components/schemas/UnitTag"
+        at:
+          type: string
+          format: date-time
+        action:
+          $ref: "#/components/schemas/UnitEventAction"
+        adminName:
+          type:
+            - string
+            - "null"
+          description: The name of the admin who did it.
+        note:
+          type:
+            - string
+            - "null"
+        ticketNumber:
+          type:
+            - string
+            - "null"
+          description: The ticket of a handover or a return, otherwise null.
+    UnitEventPage:
+      allOf:
+        - $ref: "#/components/schemas/Page"
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/UnitEvent"
+    AssetModelSummary:
+      type: object
+      required: [id, name, description, categoryId]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        categoryId:
+          type: string
+          format: uuid
+    PublicAsset:
+      type: object
+      description: The public page of a unit. It shows only the tag, the status and the model, and no other field is valid.
+      additionalProperties: false
+      required: [tag, status, model]
+      properties:
+        tag:
+          $ref: "#/components/schemas/UnitTag"
+        status:
+          $ref: "#/components/schemas/UnitStatus"
+        model:
+          $ref: "#/components/schemas/AssetModelSummary"
+    AdminAsset:
+      type: object
+      description: The page of a unit for an admin. It adds the serial number, the condition, the place and the related ticket.
+      required: [tag, status, model, serial, condition, place, relatedTicket]
+      properties:
+        tag:
+          $ref: "#/components/schemas/UnitTag"
+        status:
+          $ref: "#/components/schemas/UnitStatus"
+        model:
+          $ref: "#/components/schemas/AssetModelSummary"
+        serial:
+          type:
+            - string
+            - "null"
+        condition:
+          type: string
+        place:
+          type: string
+        relatedTicket:
+          type:
+            - object
+            - "null"
+          description: The open ticket that holds the unit, or null.
+          required: [number, effectiveStatus, requesterName]
+          properties:
+            number:
+              $ref: "#/components/schemas/TicketNumber"
+            effectiveStatus:
+              $ref: "#/components/schemas/EffectiveTicketStatus"
+            requesterName:
+              type:
+                - string
+                - "null"
+
+    # ---- tickets ----
+    TicketItemInput:
+      type: object
+      required: [modelId, qty]
+      properties:
+        modelId:
+          type: string
+          format: uuid
+        qty:
+          type: integer
+          minimum: 1
+    TicketCreate:
+      type: object
+      description: >-
+        A ticket request. The name, the NIM or NIP and the email come from the guest session.
+        The limits `maxItemsPerRequest`, `minDurationDays` and `maxDurationDays` of `GET /api/config` apply.
+        A model appears once in `items`.
+      required: [items, purpose, pickupDate, durationDays]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/TicketItemInput"
+        purpose:
+          type: string
+          minLength: 5
+          maxLength: 500
+          examples:
+            - Example loan for a lab exercise.
+        pickupDate:
+          type: string
+          format: date
+          description: A date in Asia/Jakarta, today or later.
+        durationDays:
+          type: integer
+          minimum: 1
+          description: The days of the loan. The upper limit is `maxDurationDays` of `GET /api/config`.
+        website:
+          type: string
+          description: A hidden field of the form. The client leaves it empty. A request that fills it gets a normal looking answer and creates nothing.
+    TicketItem:
+      type: object
+      required: [modelId, modelName, qty, approvedQty]
+      properties:
+        modelId:
+          type: string
+          format: uuid
+        modelName:
+          type: string
+        qty:
+          type: integer
+          minimum: 1
+        approvedQty:
+          type:
+            - integer
+            - "null"
+          minimum: 0
+          description: The quantity that an admin approved, or null before the decision.
+    TicketHistoryEntry:
+      type: object
+      required: [at, status, actorKind, note]
+      properties:
+        at:
+          type: string
+          format: date-time
+        status:
+          $ref: "#/components/schemas/TicketStatus"
+        actorKind:
+          $ref: "#/components/schemas/ActorKind"
+        actorName:
+          type: string
+          description: The name of the admin. It is present only in answers to an admin.
+        note:
+          type:
+            - string
+            - "null"
+    TicketRequester:
+      type: object
+      description: The requester of a ticket. The fields are null after the retention job anonymized the ticket.
+      required: [kind, name, nimNip, email]
+      properties:
+        kind:
+          type: string
+          enum: [guest]
+        name:
+          type:
+            - string
+            - "null"
+        nimNip:
+          type:
+            - string
+            - "null"
+        email:
+          type:
+            - string
+            - "null"
+          format: email
+    Ticket:
+      type: object
+      required:
+        - number
+        - status
+        - effectiveStatus
+        - version
+        - createdAt
+        - requester
+        - purpose
+        - pickupDate
+        - durationDays
+        - approvedDurationDays
+        - dueDate
+        - items
+        - decisionNote
+        - history
+        - anonymizedAt
+      properties:
+        number:
+          $ref: "#/components/schemas/TicketNumber"
+        status:
+          $ref: "#/components/schemas/TicketStatus"
+        effectiveStatus:
+          $ref: "#/components/schemas/EffectiveTicketStatus"
+        version:
+          $ref: "#/components/schemas/Version"
+        createdAt:
+          type: string
+          format: date-time
+        requester:
+          $ref: "#/components/schemas/TicketRequester"
+        purpose:
+          type:
+            - string
+            - "null"
+        pickupDate:
+          type: string
+          format: date
+          description: A date in Asia/Jakarta.
+        durationDays:
+          type: integer
+          minimum: 1
+        approvedDurationDays:
+          type:
+            - integer
+            - "null"
+          minimum: 1
+        dueDate:
+          type: string
+          format: date
+          description: The pickup date plus the approved days, or the requested days when none were approved.
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TicketItem"
+        decisionNote:
+          type:
+            - string
+            - "null"
+        history:
+          type: array
+          description: One entry for each status change, oldest first.
+          items:
+            $ref: "#/components/schemas/TicketHistoryEntry"
+        anonymizedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+    TicketUnit:
+      type: object
+      description: A unit that a ticket really holds.
+      required: [tag, handedOverAt, returnedAt, returnOutcome, returnNote]
+      properties:
+        tag:
+          $ref: "#/components/schemas/UnitTag"
+        handedOverAt:
+          type: string
+          format: date-time
+        returnedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        returnOutcome:
+          oneOf:
+            - $ref: "#/components/schemas/ReturnOutcome"
+            - type: "null"
+        returnNote:
+          type:
+            - string
+            - "null"
+    AdminTicket:
+      description: A ticket as an admin sees it. It adds the units that the ticket holds.
+      allOf:
+        - $ref: "#/components/schemas/Ticket"
+        - type: object
+          required: [units]
+          properties:
+            units:
+              type: array
+              items:
+                $ref: "#/components/schemas/TicketUnit"
+    TicketPage:
+      allOf:
+        - $ref: "#/components/schemas/Page"
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/Ticket"
+    ApprovedItem:
+      type: object
+      required: [modelId, approvedQty]
+      properties:
+        modelId:
+          type: string
+          format: uuid
+        approvedQty:
+          type: integer
+          minimum: 0
+    ApproveDecision:
+      type: object
+      description: >-
+        An approval of a ticket in the status `diajukan`.
+        It carries the approved quantity of every model of the ticket, which is at most the requested quantity, and may change the days.
+        At least one item has an approved quantity above 0, because an approval that holds nothing answers 422 with the code `validation_failed`.
+        The service locks the models and answers 409 with the code `stock_changed` when the available quantity is too low.
+      required: [version, decision, items]
+      properties:
+        version:
+          $ref: "#/components/schemas/Version"
+        decision:
+          $ref: "#/components/schemas/DecisionKind"
+          const: approve
+        items:
+          type: array
+          minItems: 1
+          contains:
+            type: object
+            required: [approvedQty]
+            properties:
+              approvedQty:
+                minimum: 1
+          items:
+            $ref: "#/components/schemas/ApprovedItem"
+        durationDays:
+          type: integer
+          minimum: 1
+          description: The approved days. It defaults to the requested days.
+        note:
+          $ref: "#/components/schemas/Note"
+    RejectDecision:
+      type: object
+      description: A rejection of a ticket in the status `diajukan`. It needs a note.
+      required: [version, decision, note]
+      properties:
+        version:
+          $ref: "#/components/schemas/Version"
+        decision:
+          $ref: "#/components/schemas/DecisionKind"
+          const: reject
+        note:
+          $ref: "#/components/schemas/Note"
+    DecisionRequest:
+      description: The decision on a ticket. The field `decision` tells which of the two bodies it is.
+      oneOf:
+        - $ref: "#/components/schemas/ApproveDecision"
+        - $ref: "#/components/schemas/RejectDecision"
+      discriminator:
+        propertyName: decision
+        mapping:
+          approve: "#/components/schemas/ApproveDecision"
+          reject: "#/components/schemas/RejectDecision"
+    VersionRequest:
+      type: object
+      required: [version]
+      properties:
+        version:
+          $ref: "#/components/schemas/Version"
+    HandoverRequest:
+      type: object
+      description: >-
+        The tags of the units that the admin took from the shelf, exactly the approved quantity for each model.
+        Each unit has to be active, of the right model and not in an open ticket.
+        Another case answers 409 with the code `unit_unavailable`.
+      required: [version, tags]
+      properties:
+        version:
+          $ref: "#/components/schemas/Version"
+        tags:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/UnitTag"
+    ReturnLine:
+      type: object
+      description: One unit of the ticket with its outcome. The outcome `lost` needs a note.
+      required: [tag, outcome]
+      if:
+        required: [outcome]
+        properties:
+          outcome:
+            const: lost
+      then:
+        required: [note]
+        properties:
+          tag:
+            $ref: "#/components/schemas/UnitTag"
+          outcome:
+            $ref: "#/components/schemas/ReturnOutcome"
+          note:
+            $ref: "#/components/schemas/Note"
+      properties:
+        tag:
+          $ref: "#/components/schemas/UnitTag"
+        outcome:
+          $ref: "#/components/schemas/ReturnOutcome"
+        note:
+          $ref: "#/components/schemas/Note"
+    ReturnRequest:
+      type: object
+      description: >-
+        The tag of every unit of the ticket with an outcome.
+        The return is all or nothing.
+        An outcome of `lost` needs a note.
+      required: [version, units]
+      properties:
+        version:
+          $ref: "#/components/schemas/Version"
+        units:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/ReturnLine"
+    AdminCancelRequest:
+      type: object
+      required: [version, note]
+      properties:
+        version:
+          $ref: "#/components/schemas/Version"
+        note:
+          $ref: "#/components/schemas/Note"
+
+    # ---- dashboard and account ----
+    DashboardCounts:
+      type: object
+      description: Counts for the dashboard of the admin.
+      required: [tickets, units]
+      properties:
+        tickets:
+          type: object
+          description: The count of open tickets for each effective status. The count of `dipinjam` does not include late tickets, and `terlambat` counts them. The key `siapDiambil` is the status `siap_diambil`.
+          required: [diajukan, disetujui, siapDiambil, dipinjam, terlambat]
+          properties:
+            diajukan:
+              type: integer
+              minimum: 0
+            disetujui:
+              type: integer
+              minimum: 0
+            siapDiambil:
+              type: integer
+              minimum: 0
+            dipinjam:
+              type: integer
+              minimum: 0
+            terlambat:
+              type: integer
+              minimum: 0
+        units:
+          type: object
+          description: The count of units for each status.
+          required: [available, borrowed, maintenance, lost, retired]
+          properties:
+            available:
+              type: integer
+              minimum: 0
+            borrowed:
+              type: integer
+              minimum: 0
+            maintenance:
+              type: integer
+              minimum: 0
+            lost:
+              type: integer
+              minimum: 0
+            retired:
+              type: integer
+              minimum: 0
+    AdminProfile:
+      type: object
+      required: [id, name, email, totpEnabled, passwordExpiresAt, recoveryCodesLeft]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        totpEnabled:
+          type: boolean
+        passwordExpiresAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+          description: The moment the initial password expires, or null once the admin set a password of their own.
+        recoveryCodesLeft:
+          type: integer
+          minimum: 0
+    NewPassword:
+      type: string
+      description: A password of 12 to 128 characters.
+      minLength: 12
+      maxLength: 128
+      writeOnly: true
+    PasswordChangeRequest:
+      type: object
+      description: >-
+        A change of the password.
+        It needs the current password.
+        An admin session also needs a valid TOTP code, and a setup session has none yet.
+        A change deletes the other sessions of the admin.
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword:
+          type: string
+          maxLength: 128
+          writeOnly: true
+        newPassword:
+          $ref: "#/components/schemas/NewPassword"
+        totpCode:
+          type: string
+          pattern: "^[0-9]{6}$"
+          writeOnly: true
+    TotpEnrollRequest:
+      type: object
+      description: >-
+        The enrollment of TOTP in two calls.
+        A call without `confirmCode` starts it and answers with the secret.
+        A call with the `confirmCode` of the new secret finishes it and answers with the first recovery codes.
+        Both calls need the current password, and an admin who already has TOTP also needs a valid `totpCode`.
+      required: [currentPassword]
+      properties:
+        currentPassword:
+          type: string
+          maxLength: 128
+          writeOnly: true
+        totpCode:
+          type: string
+          pattern: "^[0-9]{6}$"
+          writeOnly: true
+        confirmCode:
+          type: string
+          pattern: "^[0-9]{6}$"
+          writeOnly: true
+    TotpEnrollment:
+      type: object
+      description: The secret of the new TOTP enrollment. The client shows it as a QR code or as text.
+      required: [secret, otpauthUri]
+      properties:
+        secret:
+          type: string
+          examples:
+            - EXAMPLEEXAMPLEEX
+        otpauthUri:
+          type: string
+          examples:
+            - otpauth://totp/Example?secret=EXAMPLEEXAMPLEEX
+    RecoveryCodes:
+      type: object
+      description: One use codes for TOTP. The service shows them once and stores only their hash.
+      required: [recoveryCodes]
+      properties:
+        recoveryCodes:
+          type: array
+          items:
+            type: string
+          examples:
+            - [example-code-1, example-code-2]
+    RecoveryCodesRequest:
+      type: object
+      description: New recovery codes need the current password and a valid TOTP code. They replace the old codes.
+      required: [currentPassword, totpCode]
+      properties:
+        currentPassword:
+          type: string
+          maxLength: 128
+          writeOnly: true
+        totpCode:
+          type: string
+          pattern: "^[0-9]{6}$"
+          writeOnly: true
+
+    # ---- health ----
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok, ready, unavailable]
+
+  examples:
+    SessionGuest:
+      summary: A guest session with an identity
+      value:
+        kind: guest
+        csrfToken: example-csrf-token
+        expiresAt: "2026-11-24T03:00:00Z"
+        idleExpiresAt: "2026-11-17T15:00:00Z"
+        identity:
+          name: Example Borrower
+          nimNip: "000000000000000"
+          email: example@student.ub.ac.id
+    SessionAdmin:
+      summary: An admin session
+      value:
+        kind: admin
+        csrfToken: example-csrf-token
+        expiresAt: "2026-11-17T11:00:00Z"
+        idleExpiresAt: "2026-11-17T03:30:00Z"
+        admin:
+          id: 00000000-0000-4000-8000-000000000009
+          name: Example Admin
+          email: admin@example.org
+    CatalogPage:
+      summary: A page with one model
+      value:
+        items:
+          - id: 00000000-0000-4000-8000-000000000002
+            name: Example headset
+            categoryId: 00000000-0000-4000-8000-000000000001
+            description: A headset for an example prototype.
+            total: 5
+            held: 2
+            available: 3
+    PublicAsset:
+      summary: The answer to anyone
+      value:
+        tag: MGM-VRQ-001
+        status: available
+        model:
+          id: 00000000-0000-4000-8000-000000000002
+          name: Example headset
+          description: A headset for an example prototype.
+          categoryId: 00000000-0000-4000-8000-000000000001
+    AdminAsset:
+      summary: The answer to an admin session
+      value:
+        tag: MGM-VRQ-001
+        status: borrowed
+        model:
+          id: 00000000-0000-4000-8000-000000000002
+          name: Example headset
+          description: A headset for an example prototype.
+          categoryId: 00000000-0000-4000-8000-000000000001
+        serial: EXAMPLE-SERIAL-001
+        condition: Good
+        place: Example shelf
+        relatedTicket:
+          number: MGM-2611-0001-K7QX
+          effectiveStatus: dipinjam
+          requesterName: Example Borrower
+    Ticket:
+      summary: A ticket in the status diajukan
+      value:
+        number: MGM-2611-0001-K7QX
+        status: diajukan
+        effectiveStatus: diajukan
+        version: 1
+        createdAt: "2026-11-17T03:00:00Z"
+        requester:
+          kind: guest
+          name: Example Borrower
+          nimNip: "000000000000000"
+          email: example@student.ub.ac.id
+        purpose: Example loan for a lab exercise.
+        pickupDate: "2026-11-20"
+        durationDays: 7
+        approvedDurationDays: null
+        dueDate: "2026-11-27"
+        items:
+          - modelId: 00000000-0000-4000-8000-000000000002
+            modelName: Example headset
+            qty: 2
+            approvedQty: null
+        decisionNote: null
+        history:
+          - at: "2026-11-17T03:00:00Z"
+            status: diajukan
+            actorKind: guest
+            note: null
+        anonymizedAt: null
+    AdminTicket:
+      summary: A ticket in the status dipinjam
+      value:
+        number: MGM-2611-0001-K7QX
+        status: dipinjam
+        effectiveStatus: dipinjam
+        version: 4
+        createdAt: "2026-11-17T03:00:00Z"
+        requester:
+          kind: guest
+          name: Example Borrower
+          nimNip: "000000000000000"
+          email: example@student.ub.ac.id
+        purpose: Example loan for a lab exercise.
+        pickupDate: "2026-11-20"
+        durationDays: 7
+        approvedDurationDays: 7
+        dueDate: "2026-11-27"
+        items:
+          - modelId: 00000000-0000-4000-8000-000000000002
+            modelName: Example headset
+            qty: 2
+            approvedQty: 2
+        decisionNote: null
+        history:
+          - at: "2026-11-17T03:00:00Z"
+            status: diajukan
+            actorKind: guest
+            note: null
+          - at: "2026-11-18T03:00:00Z"
+            status: disetujui
+            actorKind: admin
+            actorName: Example Admin
+            note: null
+          - at: "2026-11-19T03:00:00Z"
+            status: siap_diambil
+            actorKind: admin
+            actorName: Example Admin
+            note: null
+          - at: "2026-11-20T03:00:00Z"
+            status: dipinjam
+            actorKind: admin
+            actorName: Example Admin
+            note: null
+        anonymizedAt: null
+        units:
+          - tag: MGM-VRQ-001
+            handedOverAt: "2026-11-20T03:00:00Z"
+            returnedAt: null
+            returnOutcome: null
+            returnNote: null
+          - tag: MGM-VRQ-002
+            handedOverAt: "2026-11-20T03:00:00Z"
+            returnedAt: null
+            returnOutcome: null
+            returnNote: null
+    TicketPage:
+      summary: A page with one ticket
+      value:
+        items:
+          - number: MGM-2611-0001-K7QX
+            status: diajukan
+            effectiveStatus: diajukan
+            version: 1
+            createdAt: "2026-11-17T03:00:00Z"
+            requester:
+              kind: guest
+              name: Example Borrower
+              nimNip: "000000000000000"
+              email: example@student.ub.ac.id
+            purpose: Example loan for a lab exercise.
+            pickupDate: "2026-11-20"
+            durationDays: 7
+            approvedDurationDays: null
+            dueDate: "2026-11-27"
+            items:
+              - modelId: 00000000-0000-4000-8000-000000000002
+                modelName: Example headset
+                qty: 2
+                approvedQty: null
+            decisionNote: null
+            history:
+              - at: "2026-11-17T03:00:00Z"
+                status: diajukan
+                actorKind: guest
+                note: null
+            anonymizedAt: null
+        nextCursor: example-cursor
+    LookupResult:
+      summary: A found ticket
+      value:
+        csrfToken: example-csrf-token
+        ticket:
+          number: MGM-2611-0001-K7QX
+          status: diajukan
+          effectiveStatus: diajukan
+          version: 1
+          createdAt: "2026-11-17T03:00:00Z"
+          requester:
+            kind: guest
+            name: Example Borrower
+            nimNip: "000000000000000"
+            email: example@student.ub.ac.id
+          purpose: Example loan for a lab exercise.
+          pickupDate: "2026-11-20"
+          durationDays: 7
+          approvedDurationDays: null
+          dueDate: "2026-11-27"
+          items:
+            - modelId: 00000000-0000-4000-8000-000000000002
+              modelName: Example headset
+              qty: 2
+              approvedQty: null
+          decisionNote: null
+          history:
+            - at: "2026-11-17T03:00:00Z"
+              status: diajukan
+              actorKind: guest
+              note: null
+          anonymizedAt: null
+    Model:
+      summary: A model
+      value:
+        id: 00000000-0000-4000-8000-000000000002
+        name: Example headset
+        categoryId: 00000000-0000-4000-8000-000000000001
+        description: A headset for an example prototype.
+        total: 0
+        held: 0
+        available: 0
+        prefix: VRQ
+        retiredAt: null
+    ModelPage:
+      summary: A page with one model
+      value:
+        items:
+          - id: 00000000-0000-4000-8000-000000000002
+            name: Example headset
+            categoryId: 00000000-0000-4000-8000-000000000001
+            description: A headset for an example prototype.
+            total: 5
+            held: 2
+            available: 3
+            prefix: VRQ
+            retiredAt: null
+    Unit:
+      summary: A unit
+      value:
+        tag: MGM-VRQ-001
+        modelId: 00000000-0000-4000-8000-000000000002
+        modelName: Example headset
+        serial: EXAMPLE-SERIAL-001
+        condition: Good
+        place: Example shelf
+        lifecycle: active
+        lifecycleNote: null
+        status: available
+        createdAt: "2026-11-17T03:00:00Z"
+    UnitList:
+      summary: Two new units
+      value:
+        items:
+          - tag: MGM-VRQ-001
+            modelId: 00000000-0000-4000-8000-000000000002
+            modelName: Example headset
+            serial: null
+            condition: Good
+            place: Example shelf
+            lifecycle: active
+            lifecycleNote: null
+            status: available
+            createdAt: "2026-11-17T03:00:00Z"
+          - tag: MGM-VRQ-002
+            modelId: 00000000-0000-4000-8000-000000000002
+            modelName: Example headset
+            serial: null
+            condition: Good
+            place: Example shelf
+            lifecycle: active
+            lifecycleNote: null
+            status: available
+            createdAt: "2026-11-17T03:00:00Z"
+    UnitPage:
+      summary: A page with one unit
+      value:
+        items:
+          - tag: MGM-VRQ-001
+            modelId: 00000000-0000-4000-8000-000000000002
+            modelName: Example headset
+            serial: EXAMPLE-SERIAL-001
+            condition: Good
+            place: Example shelf
+            lifecycle: active
+            lifecycleNote: null
+            status: available
+            createdAt: "2026-11-17T03:00:00Z"
+    UnitEventPage:
+      summary: A page with one event
+      value:
+        items:
+          - id: 00000000-0000-4000-8000-000000000010
+            tag: MGM-VRQ-001
+            at: "2026-11-17T03:00:00Z"
+            action: added
+            adminName: Example Admin
+            note: null
+            ticketNumber: null
