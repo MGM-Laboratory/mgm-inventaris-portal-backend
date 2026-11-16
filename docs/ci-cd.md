@@ -44,7 +44,7 @@ The pre-commit.ci GitHub app runs the hooks of `.pre-commit-config.yaml` on ever
 
 ## Naming rules
 
-`.ls-lint.yml` sets the naming of files and folders. Folders are lowercase words joined by hyphens. Files are kebab case, and Markdown files may also use capitals such as `README.md`. A Go file is lowercase words with no separator, and only `_test` may follow them. Workflows end with `.yaml` and every other YAML file ends with `.yml`, except `.pre-commit-config.yaml`, which pre-commit reads by that name.
+`.ls-lint.yml` sets the naming of files and folders. Folders are lowercase words joined by hyphens. Files are kebab case, and Markdown files may also use capitals such as `README.md`. A Go file is lowercase words with no separator, and only `_test` may follow them. Workflows end with `.yaml` and every other YAML file ends with `.yml`, also when the name has more dots such as `compose.production.yml`, except `.pre-commit-config.yaml`, which pre-commit reads by that name. ls-lint does not merge the rules of a folder with the rules above it, so `.ls-lint.yml` repeats the shared rules in every folder entry through a merge key.
 
 ## Dependency updates
 
