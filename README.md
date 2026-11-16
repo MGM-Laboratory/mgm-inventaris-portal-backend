@@ -29,6 +29,7 @@ The service code is not written yet, so it reads no settings. This section gets 
 ## Documentation
 
 - [`docs/ci-cd.md`](docs/ci-cd.md) lists the workflows, the required checks and the release flow.
+- [`docs/architecture.md`](docs/architecture.md), [`docs/data-model.md`](docs/data-model.md), [`docs/api.md`](docs/api.md) and [`docs/errors.md`](docs/errors.md) describe the planned design, the stock rules, the contract rules and the error codes.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`SECURITY.md`](SECURITY.md) hold the rules for contributions and for reporting a vulnerability.
 
 ## Project layout
