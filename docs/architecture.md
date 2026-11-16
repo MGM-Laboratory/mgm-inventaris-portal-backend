@@ -11,18 +11,18 @@ The backend of the LabMGM inventory portal keeps the loan records of the lab. A 
 | Part | Choice | Reason |
 | --- | --- | --- |
 | Language | Go | One static binary and a small image |
-| HTTP | Fiber v3 | Same stack as the other Go services of the lab |
+| HTTP | Fiber v3 | A Go web framework with a small middleware model |
 | Database | PostgreSQL through pgx v5 | Transactions, row locks and partial unique indexes carry the stock rules |
 | Migrations | golang-migrate with SQL files embedded in the binary | The binary applies them at start under an advisory lock |
 | Settings | Environment variables read at start | See the Configuration section of the README |
-| Logs and metrics | JSON logs with a request id, Prometheus metrics, error reports | Same as the other services |
+| Logs and metrics | JSON logs with a request id, Prometheus metrics, error reports | One request id ties a log line, a metric and an error report together |
 
 ## Request flow
 
 1. The reverse proxy sends `/api` to the service and every other path to the frontend. The browser sees one hostname.
 2. A middleware assigns a request id, reads the session cookie and loads the session.
 3. A write request must also carry the CSRF header, and its `Origin` header must match the public hostname.
-4. The rate limit middleware counts the request in the database and answers `429` when a limit is over.
+4. The sign in routes, the ticket creation and the ticket lookup count the request in the database and answer `429` when a limit is over. Other routes are not counted.
 5. The handler validates the body, runs one database transaction and answers with JSON.
 
 ## Package layout
@@ -47,7 +47,7 @@ A package owns its tables and exposes plain functions. A handler never builds SQ
 
 - A session is a random 256 bit value in an `HttpOnly`, `Secure`, `SameSite=Lax` cookie. The database stores only its SHA-256 hash.
 - A session has a kind, either guest or admin. A guest session holds the name, the NIM or NIP and the email that the guest typed. It is not an account.
-- An admin signs in with a local account, a password and a TOTP code. Passwords are hashed with Argon2id.
+- An admin signs in with a local account, a password and a TOTP code or a recovery code. Passwords are hashed with Argon2id, and the memory cost and the sign in limits keep two copies of the service within the memory of the host.
 - Every rule of access is checked in the service. The frontend only hides screens.
 - A serial number, a place and a condition of a unit are shown only to admins.
 - A secret never goes in the repository, in a log or in an error answer.
@@ -60,4 +60,4 @@ Stock rules need locks, because two admins can work on the same model at the sam
 
 ## Deployment
 
-The service runs as two copies behind the reverse proxy on one host, with the PostgreSQL database in a separate container. A rolling update replaces one copy at a time and waits for its health check.
+The service runs as two copies behind the reverse proxy on one host, with the PostgreSQL database in a separate container. The health routes listen on an internal port that the proxy does not route. A rolling update replaces one copy at a time and waits for its health check.
