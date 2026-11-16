@@ -15,12 +15,13 @@ Every error answer has the body described in [`api.md`](api.md). The field `code
 | `origin_not_allowed` | 403 | The `Origin` header of a write names another host, or it is missing and the request is not same origin | Do not retry |
 | `not_found` | 404 | The thing does not exist, or the session may not see it | Show not found |
 | `ticket_not_found` | 404 | The number and the email do not match a ticket | Show one message, so the answer does not reveal whether the number exists |
-| `stock_changed` | 409 | An approval or a handover asks for more than is available now | Reload the ticket and the stock, then decide again |
+| `stock_changed` | 409 | An approval or a handover asks for more than is available now, or a lifecycle change would leave less stock than is held | Reload the ticket and the stock, then decide again |
 | `version_conflict` | 409 | The version in the request is older than the stored one | Reload and apply the change again |
-| `status_conflict` | 409 | The ticket is not in a status that allows the change | Reload the ticket |
+| `status_conflict` | 409 | The ticket is not in a status that allows the change, or a permanent delete finds that a ticket used the thing | Reload the ticket |
 | `unit_held` | 409 | A unit is in an open ticket and cannot change its lifecycle | Finish the ticket first |
 | `unit_unavailable` | 409 | A unit at handover is not active, not of the right model or already held | Choose another unit |
-| `duplicate` | 409 | A name, a prefix or a serial number is already used, or a repeat of a ticket request arrives while the first one runs | Choose another value, or wait and read the ticket list |
+| `duplicate` | 409 | A name, a prefix or a serial number is already used | Choose another value |
+| `request_in_progress` | 409 | A repeat of a ticket request arrives while the first one still runs | Wait a moment and read the ticket list |
 | `validation_failed` | 422 | A field fails a rule, with one entry in `details` for each field | Show each message at its field |
 | `rate_limited` | 429 | A rate limit is over, also after too many failed admin sign ins | Wait for the number of seconds in `Retry-After` |
 | `internal` | 500 | A bug or an unexpected failure | Show a general message and give the request id to a maintainer |

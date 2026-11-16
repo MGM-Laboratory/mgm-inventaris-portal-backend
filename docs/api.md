@@ -29,7 +29,7 @@ Status of this page. It describes the planned contract. A hand written `openapi.
 
 ## Client address
 
-The service reads the client address from the header `X-Real-IP` only when the request comes from the proxy address in the settings. Otherwise it uses the address of the peer. An IPv6 address counts as its `/64` prefix. The health routes are served on an internal port and are not routed by the proxy.
+The proxy overwrites the header `X-Real-IP` with the address that it saw. The service reads that header only when the request comes from the proxy address in the settings. Otherwise it uses the address of the peer. An IPv6 address counts as its `/64` prefix. The health routes are served on an internal port and are not routed by the proxy.
 
 ## Errors
 
@@ -69,15 +69,15 @@ These are settings. The lab decides the final values, and the values here are th
 | Items in one request (all quantities added) | 10 |
 | Days of a loan | 1 to 30 |
 | Open tickets for one email or one NIM or NIP | 3 |
-| Guest sign in for one IP address | 10 each hour |
-| New tickets for one IP address | 5 each hour |
-| Failed ticket lookups for one IP address, and for one ticket number without its last part | 20 and 10 each hour |
-| Failed admin sign ins for one account from one IP address | 5 in 15 minutes, then 15 minutes of `429` for that pair |
-| Admin sign in attempts for one IP address | 20 each hour |
+| Guest sign in for one IP address | 60 each hour |
+| New tickets for one IP address | 20 each hour |
+| Failed ticket lookups for one IP address, and for one ticket number without its last part together with one email | 20 and 10 each hour |
+| Failed admin sign ins for one email from one IP address | 5 in 15 minutes, then 15 minutes of `429` for that pair |
+| Failed admin sign ins for one IP address | 20 each hour |
 
 The guest form has a hidden trap field. A request that fills it gets a normal looking answer and creates nothing.
 
-The counters cover only the sign in routes, the ticket creation and the ticket lookup. The key of a lookup limit is the part `yymm-nnnn` of the number, because the last part is the secret.
+The counters cover only the sign in routes, the ticket creation and the ticket lookup. A campus network can share one address, so the admin limit for an address counts only failures. The key of a lookup limit is the part `yymm-nnnn` of the number together with a hash of the submitted email, because the last part of the number is the secret and a stranger must not be able to block the lookup of a real borrower.
 
 ## Roles
 
@@ -87,16 +87,16 @@ The counters cover only the sign in routes, the ticket creation and the ticket l
 | Guest | A guest session | Read the catalog, create tickets (needs the identity), read and cancel the tickets of the session |
 | Admin | An admin session | Everything above, and all admin routes |
 
-An identified guest session needs the name, the NIM or NIP and an email that ends in `ub.ac.id`, also with a subdomain such as `student.ub.ac.id`. The service compares the email in lower case.
+An identified guest session needs the name, the NIM or NIP and an email whose domain is `ub.ac.id` or ends in `.ub.ac.id`, such as `student.ub.ac.id`. The service compares the email in lower case.
 
 ## Main flows
 
 1. **Request.** A guest signs in, reads the catalog, and posts a ticket. The service checks the limits, creates the number and the rows, and answers `201` with the ticket. The ticket starts as `diajukan`.
-2. **Sign in of an admin.** The body holds the email, the password and either a TOTP code or a recovery code. The service checks all of them and answers `invalid_credentials` for any wrong value, so the answer does not say which one is wrong. An admin who has no TOTP yet gets a setup session that can call only the TOTP setup route.
+2. **Sign in of an admin.** The body holds the email, the password and either a TOTP code or a recovery code. The service checks all of them and answers `invalid_credentials` for any wrong value, so the answer does not say which one is wrong. An admin who has no TOTP yet, or whose initial password has expired, gets a setup session of 15 minutes. It can call only the setup route and the session routes.
 3. **Decision.** An admin posts a decision with the version it read. An approval carries the approved quantity of each model and may change the days. The service locks the models, checks the available quantity, and answers `409` with `stock_changed` when it is too low.
 4. **Handover.** The admin posts the tags of the units that it took from the shelf, one for each approved item. The ticket becomes `dipinjam`.
-5. **Return.** The admin posts the tag of every unit of the ticket with an outcome, which is `ok`, `maintenance` or `lost`. The return is all or nothing. The ticket becomes `dikembalikan`, and a unit with another outcome changes its lifecycle.
-6. **Cancel.** A guest may cancel a ticket in the status `diajukan` or `menunggu_verifikasi`. An admin may reject a ticket in the status `diajukan` with a note, and may cancel a ticket in the status `disetujui` or `siap_diambil` with a note.
+5. **Return.** The admin posts the tag of every unit of the ticket with an outcome, which is `ok`, `maintenance` or `lost`. The return is all or nothing, and an outcome of `lost` needs a note. The ticket becomes `dikembalikan`, and a unit with another outcome changes its lifecycle.
+6. **Cancel.** A guest may cancel a ticket in the status `diajukan`. An admin may reject a ticket in the status `diajukan` with a note, and may cancel a ticket in the status `disetujui` or `siap_diambil` with a note.
 
 ## Routes
 
@@ -132,7 +132,7 @@ The table is a map. The exact bodies are in `openapi.yaml`.
 | `POST /api/admin/units/{tag}/lifecycle` | Admin | Change the lifecycle with a note |
 | `GET /api/admin/units/{tag}/events` | Admin | History of a unit |
 | `GET /api/admin/unit-events` | Admin | History of all units, newest first |
-| `GET /api/admin/me`, `POST /api/admin/me/password`, `POST /api/admin/me/totp`, `POST /api/admin/me/recovery-codes` | Admin | Own account, TOTP setup and new recovery codes |
+| `GET /api/admin/me`, `POST /api/admin/me/password`, `POST /api/admin/me/totp`, `POST /api/admin/me/recovery-codes` | Admin | Own account, setup of the password and TOTP, and new recovery codes |
 | `GET /healthz`, `GET /readyz` | The proxy | Health checks on the internal port, not under `/api` |
 
 ## Status of a unit
