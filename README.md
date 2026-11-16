@@ -1,0 +1,1 @@
+# mgm-inventaris-portal-backend
