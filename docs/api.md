@@ -8,7 +8,7 @@ Status of this page. It describes the planned contract. The hand written `openap
 - Bodies and answers are JSON in UTF-8. A time is RFC 3339 in UTC. A pickup date is `YYYY-MM-DD` in Asia/Jakarta.
 - Names in JSON are camel case. Ids of tickets are the ticket number. Ids of units are the tag. Other ids are UUIDs.
 - Every answer carries `Cache-Control: no-store` and an `X-Request-Id` header. A client may send its own `X-Request-Id`.
-- A list answers `{ "items": [...], "nextCursor": "..." }`. The query takes `limit` (default 50, most 100) and `cursor`. The field `nextCursor` is absent on the last page.
+- A list answers `{ "items": [...], "nextCursor": "..." }`. The query takes `limit` (default 50, most 100) and `cursor`. The field `nextCursor` is absent on the last page. The answer also holds `total`, the number of all matches.
 
 ## Sessions and CSRF
 
@@ -118,14 +118,14 @@ The table is a map. The exact bodies are in `openapi.yaml`.
 | `POST /api/tickets/lookup` | Anyone | Find a ticket by its number and email |
 | `GET /api/tickets/{number}` | Guest | Read one ticket of the session |
 | `POST /api/tickets/{number}/cancel` | Guest | Cancel a ticket |
-| `GET /api/admin/tickets` | Admin | The queue, filtered by status |
+| `GET /api/admin/tickets` | Admin | The queue, filtered by a list of statuses, by pickup and due dates and by a search text |
 | `GET /api/admin/tickets/{number}` | Admin | Read any ticket |
 | `POST /api/admin/tickets/{number}/decision` | Admin | Approve or reject |
 | `POST /api/admin/tickets/{number}/ready` | Admin | Mark ready for pickup |
 | `POST /api/admin/tickets/{number}/handover` | Admin | Hand over the units |
 | `POST /api/admin/tickets/{number}/return` | Admin | Take the units back |
 | `POST /api/admin/tickets/{number}/cancel` | Admin | Cancel an approved ticket with a note |
-| `GET /api/admin/dashboard` | Admin | Counts for the dashboard |
+| `GET /api/admin/dashboard` | Admin | Counts of every ticket status and of units for each category |
 | `GET/POST /api/admin/categories` | Admin | List and add categories |
 | `GET/POST /api/admin/models`, `PATCH/DELETE /api/admin/models/{id}` | Admin | Manage models |
 | `POST /api/admin/models/{id}/units` | Admin | Add one to twenty units |
@@ -133,9 +133,24 @@ The table is a map. The exact bodies are in `openapi.yaml`.
 | `POST /api/admin/units/{tag}/lifecycle` | Admin | Change the lifecycle with a note |
 | `GET /api/admin/units/{tag}/events` | Admin | History of a unit |
 | `GET /api/admin/unit-events` | Admin | History of all units, newest first |
+| `GET /api/admin/ticket-events` | Admin | Status changes of all tickets, newest first |
 | `GET /api/admin/me`, `POST /api/admin/me/password`, `POST /api/admin/me/totp`, `POST /api/admin/me/recovery-codes` | Admin | Own account, setup of the password and TOTP, and new recovery codes |
 | `GET /healthz`, `GET /readyz` | The proxy | Health checks on the internal port, not under `/api` |
 
 ## Status of a unit
 
 A unit shows one status. The status is `retired`, `lost` or `maintenance` for the lifecycle of the same name. An active unit is `borrowed` while it is in an open row of a ticket, and `available` otherwise. A unit has no reserved status, because units are chosen at handover and not when a ticket is approved.
+
+## Rules of the routes
+
+- A ticket in the status `dipinjam` is late when today in Asia/Jakarta is after its due date. The API shows it as `terlambat` in `effectiveStatus`.
+- A search text `q` needs at least 2 characters. A shorter text answers `422`.
+- A request that creates a ticket is refused with `422` when a quantity is above the available quantity at that moment. The check holds nothing, because the hold starts at the approval.
+- The note of an approval, a reject or an admin cancel is the `decisionNote` of the ticket and is also in the history. The notes of a handover and a return are only in the history.
+- Cancelling a ticket that is already cancelled answers `200` with the ticket.
+- The routes that create a ticket, a model, a category or units accept an `Idempotency-Key`.
+- Names of categories and models, prefixes and serial numbers are unique ignoring letter case. A clash answers `409` with the code `duplicate`.
+- A new model takes either an existing category or a new one. A new category with a name that exists reuses the existing one.
+- A unit changes its lifecycle only along these steps. From `active` to `maintenance`, `lost` or `retired`. From `maintenance` to `active`, `lost` or `retired`. From `lost` to `active` or `retired`. From `retired` to `active`, while its model is not retired. Another step answers `409` with the code `status_conflict`.
+- Models and units have no version. When two admins change the same one, the last write wins.
+- The QR address of a unit is the public address of the portal followed by `/aset/` and the tag.

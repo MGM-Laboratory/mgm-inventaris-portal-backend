@@ -28,4 +28,4 @@ Every error answer has the body described in [`api.md`](api.md). The field `code
 | `internal` | 500 | A bug or an unexpected failure | Show a general message and give the request id to a maintainer |
 | `unavailable` | 503 | The database is not reachable | Try again later |
 
-A `details` entry has `field`, `code` and `message`. The codes of a field are short words such as `required`, `too_long`, `too_many`, `invalid_format`, `not_ub_email` and `out_of_range`.
+A `details` entry has `field`, `code` and `message`. The codes of a field are short words such as `required`, `too_long`, `too_many`, `too_many_items`, `too_many_open_tickets`, `model_retired`, `invalid_format`, `not_ub_email`, `out_of_range` and `duplicate`. A `duplicate` entry names the field, and for a serial number it gives the tag of the other unit in `existingTag`.

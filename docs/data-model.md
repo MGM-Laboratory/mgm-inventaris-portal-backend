@@ -18,6 +18,10 @@ All tables live in one PostgreSQL database. Ids are UUIDs made by the service. T
 - `lifecycle` is one of `active`, `maintenance`, `lost` and `retired`. Only `active` units can be loaned.
 - A model or a unit is retired and never deleted. A permanent delete is allowed only for a model or a unit that no ticket has ever used.
 - A model can be retired only when no ticket in the status `diajukan`, `disetujui`, `siap_diambil` or `dipinjam` asks for it. Otherwise the service answers `409`.
+- The names of categories and models, the prefixes and the serial numbers are unique ignoring letter case, through unique indexes on the lower case value. A prefix is stored in upper case.
+- A unit changes its lifecycle only from `active` to `maintenance`, `lost` or `retired`, from `maintenance` to `active`, `lost` or `retired`, from `lost` to `active` or `retired`, and from `retired` to `active` while its model is not retired. Another step answers `409` with the code `status_conflict`.
+- Models and units have no version. When two admins change the same one, the last write wins.
+- A model can be created together with a new category in one transaction. A category name that exists reuses the existing category.
 - A serial number has 3 to 100 characters after the service trims the spaces. An empty serial number is stored as null, so units without a serial never clash.
 - A lifecycle change to `lost` or `retired` needs a note.
 
@@ -32,8 +36,9 @@ All tables live in one PostgreSQL database. Ids are UUIDs made by the service. T
 | `ticket_counters` | The running number of each month | `period` (for example `2611`), `last` |
 
 - The number has the form `MGM-yymm-nnnn-XXXX`. The part `yymm` is the month in Asia/Jakarta. The part `nnnn` comes from `ticket_counters` in the transaction that inserts the ticket. The suffix `XXXX` has four characters from an alphabet of 32 characters without `I`, `O`, `0` and `1`, drawn from `crypto/rand`.
-- The status is one of `diajukan`, `disetujui`, `siap_diambil`, `dipinjam`, `dikembalikan`, `dibatalkan` and `ditolak`. The status `terlambat` is not stored. It is derived when a ticket is read, from the status `dipinjam` and a due date in the past, and the API shows it as `effectiveStatus`. The due date is the pickup date plus the approved days, or the requested days when none were approved.
+- The status is one of `diajukan`, `disetujui`, `siap_diambil`, `dipinjam`, `dikembalikan`, `dibatalkan` and `ditolak`. The status `terlambat` is not stored. It is derived when a ticket is read, from the status `dipinjam` and a due date before today in Asia/Jakarta, and the API shows it as `effectiveStatus`. The due date is the pickup date plus the approved days, or the requested days when none were approved.
 - `version` starts at 1 and grows with each change. An admin request carries the version it read, and a stale version is refused.
+- `decision_note` holds the latest note of an approval, a reject or an admin cancel, and the same note is in the history row. The notes of a handover and a return are only in the history and in the notes of the ticket units.
 - A partial unique index on `ticket_units (unit_id) where returned_at is null` makes it impossible that two open tickets hold the same unit.
 - A ticket asks for models. The units are chosen at handover, when the admin scans the QR label of each unit.
 - An open ticket, for the limit of open tickets, is a ticket in the status `diajukan`, `disetujui`, `siap_diambil` or `dipinjam`.
@@ -44,6 +49,7 @@ All tables live in one PostgreSQL database. Ids are UUIDs made by the service. T
 - The stock of a model is the count of its units with the lifecycle `active`.
 - A model is held by every ticket in the status `disetujui`, `siap_diambil` or `dipinjam`. A ticket in the status `diajukan` holds nothing. A late ticket is a ticket in the status `dipinjam`, so it still holds.
 - Held quantity is the sum of `approved_qty` of those tickets for the model. Available quantity is the stock minus the held quantity, and the API shows a negative number as 0.
+- A request that creates a ticket is refused when a quantity is above the available quantity at that moment. The check reads under the share locks of the creation and holds nothing, because the hold starts at an approval.
 - An approval is refused when `approved_qty` is more than the available quantity at that moment. An approval also needs at least one `approved_qty` above 0, because a hold of nothing could only be undone by a cancel.
 - A handover needs exactly `approved_qty` units for each model. Each unit must be active, of the right model and not in an open row of `ticket_units`.
 - A unit cannot leave the status `active` while it is in an open row of `ticket_units`, and the service answers `409` with the code `unit_held`. It also cannot leave the status `active` by an admin change when the stock would fall below the held quantity of its model, and the service answers `409` with the code `stock_changed`.
@@ -59,7 +65,7 @@ All tables live in one PostgreSQL database. Ids are UUIDs made by the service. T
 - Creating a ticket takes the advisory locks first and then the requested model rows with `select ... for share`, in the order of the model id. It refuses a retired model with `validation_failed`. A permanent delete of a model or a unit locks it first and answers `409` with the code `status_conflict` when a ticket used it, and a database error never reaches the client as `500`.
 - The `model_id` of a unit never changes, because a change would break the lock order.
 - A status change of a ticket is a guarded update. It names the expected old status and the expected version, and it changes no row when either differs. The service then answers `409`.
-- A request that creates a ticket may carry an `Idempotency-Key`. The service stores the key for the session with the answer for 24 hours and returns the same answer for a repeat, whatever the new body says. The row has a state, `running` or `done`, and a repeat that arrives while the first request runs answers `409` with the code `request_in_progress`.
+- A request that creates a ticket, a model, a category or units may carry an `Idempotency-Key`. The service stores the key for the session with the answer for 24 hours and returns the same answer for a repeat, whatever the new body says. The row has a state, `running` or `done`, and a repeat that arrives while the first request runs answers `409` with the code `request_in_progress`.
 - Database specs in CI prove these rules on a real PostgreSQL, because a mock cannot prove locks.
 
 ## People and sessions
