@@ -18,15 +18,14 @@ The lint tools that run as Docker images (actionlint, Zizmor, ShellCheck and git
 
 ## Required checks
 
-The ruleset `main` on the default branch requires a pull request with a merge commit, resolved review threads, signed commits, up to date branches, and no deletion or force push. It has no bypass actor. It requires one status check today, pinned to GitHub Actions.
+The ruleset `main` on the default branch requires a pull request with a merge commit, resolved review threads, signed commits, up to date branches, and no deletion or force push. It has no bypass actor. It requires four status checks, each pinned to GitHub Actions.
 
 - Conventional commits
-
-These checks run on every pull request and are not required yet. They join the ruleset after each of them has run once.
-
 - PR format
 - Config gate
 - Security gate
+
+A check joins the ruleset after it has run once. The pre-commit.ci report and the code scanning results are not required.
 
 A second ruleset, `main-merge-and-approval`, requires one approving review and the approval of a code owner, and it allows only merge commits. It also has the rule `update`, so only the bypass team can merge into `main`. `.github/CODEOWNERS` names the owner. The team `mgm-inventaris-portal-maintainer` can bypass this second ruleset through a pull request, and it cannot bypass the first one. The bypass covers only the approval, the code owner review and the `update` rule. Signed commits, resolved threads, up to date branches and the required checks still apply to the team. A pull request from someone outside the team needs the approval of the owner. A pull request that changes only `go.mod`, `go.sum`, `CHANGELOG.md` or `.release-please-manifest.json` has no code owner, so it needs any one approval.
 

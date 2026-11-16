@@ -22,7 +22,7 @@ There is no `dev` branch. Every change to `main` goes through a pull request.
 
 ## Checks
 
-Every pull request runs the checks below. The ruleset of the repository requires only **Conventional commits** today. The other checks join the ruleset after each of them has run once, and `docs/ci-cd.md` lists the current state.
+Every pull request runs the checks below. The ruleset of the repository requires **Conventional commits**, **PR format**, **Config gate** and **Security gate**. `docs/ci-cd.md` lists the current state.
 
 - **Conventional commits** reads every commit message and the title of the pull request.
 - **PR format** reads the branch name, the label, the assignee and the body.
