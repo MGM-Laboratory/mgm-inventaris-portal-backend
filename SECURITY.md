@@ -27,4 +27,4 @@ You can expect an initial response within 7 days. We keep you updated while the 
 
 ## How this repository is checked
 
-Findings from the automated tooling in this repository (secret scanning, dependency review, Trivy and OSSF Scorecard) are triaged the same way as external reports. The default branch needs a pull request and signed commits. A pull request also needs the approval of a code owner, and the maintainer team can bypass that approval, so the single owner can merge their own pull request after the checks are green. Details of the checks are in `docs/ci-cd.md`.
+Findings from the automated tooling in this repository (secret scanning, dependency review, Trivy and OSSF Scorecard) are triaged the same way as external reports. The default branch needs a pull request and signed commits. A pull request also needs the approval of a code owner, and the maintainer team can bypass that approval, so a member of that team can merge a pull request after the required checks are green. Details of the checks are in `docs/ci-cd.md`.

@@ -17,8 +17,8 @@ There is no `dev` branch. Every change to `main` goes through a pull request.
 1. Fork the repository, or branch directly if you are a collaborator.
 2. Make your change.
 3. Open a pull request against `main`. Keep it focused.
-4. Wait for the checks below. They have to be green, every review thread has to be resolved and the code owner has to approve the pull request. The maintainer team may bypass that approval, so the owner can merge their own pull request after the checks are green.
-5. Only the maintainer merges, with a merge commit and never a squash or a rebase. Nobody can push to `main` directly, and every commit has to be signed.
+4. Wait for the checks below. The required ones have to be green, every review thread has to be resolved and the code owner has to approve the pull request. The maintainer team may bypass that approval, so a member of the team can merge a pull request after the required checks are green.
+5. Only a member of the maintainer team merges, with a merge commit and never a squash or a rebase. Nobody can push to `main` directly, and every commit has to be signed.
 
 ## Checks
 
@@ -27,10 +27,10 @@ Every pull request runs the checks below. The ruleset of the repository requires
 - **Conventional commits** reads every commit message and the title of the pull request.
 - **PR format** reads the branch name, the label, the assignee and the body.
 - **Config gate** runs actionlint, Zizmor, ShellCheck, ls-lint for file names and the Renovate validator.
-- **Security gate** summarizes dependency review, gitleaks and a Trivy filesystem scan. All three fail on a finding. Trivy fails on a CRITICAL or HIGH finding and also sends its findings to code scanning.
+- **Security gate** summarizes dependency review, gitleaks and a Trivy filesystem scan. Dependency review fails on a finding of severity high or above, and gitleaks fails on any finding. Trivy fails on a CRITICAL or HIGH finding and also sends its findings to code scanning.
 - **pre-commit.ci** is not required by the ruleset, but its report should be clean. It runs repository hygiene checks on every pull request and does not push a fix.
 
-A commit message or a title that does not follow Conventional Commits blocks the merge. A lint warning or a deprecation notice in the output of a check is still something to fix before the pull request is done, even when it does not turn the check red.
+A commit message or a title that does not follow Conventional Commits blocks the merge. To revert a change, write the title as `revert: <summary>`, because the default title that the GitHub revert button makes is rejected. A lint warning or a deprecation notice in the output of a check is still something to fix before the pull request is done, even when it does not turn the check red.
 
 ## Go checks
 
