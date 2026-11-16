@@ -14,7 +14,7 @@ info:
 
     Every answer carries `Cache-Control: no-store` and an `X-Request-Id` header. A client may send its own `X-Request-Id`.
 
-    A list answers `{ "items": [...], "nextCursor": "..." }`. The query takes `limit` (default 50, most 100) and `cursor`. The field `nextCursor` is absent on the last page.
+    A list answers `{ "items": [...], "total": 120, "nextCursor": "..." }`. The query takes `limit` (default 50, most 100) and `cursor`. The field `total` is the number of all matches of the query and not only the items of the page. The field `nextCursor` is absent on the last page.
 
     A session is a cookie. Every POST, PATCH and DELETE also needs the CSRF header, except the three routes that start a session or look a ticket up. Those three rely on the `Origin` check and on their rate limits.
 
@@ -110,7 +110,10 @@ paths:
       tags: [Config]
       operationId: getConfig
       summary: Read the public settings
-      description: Anyone can read it. It holds the limits of the lab and the public address that the QR code uses.
+      description: >-
+        Anyone can read it.
+        It holds the limits of the lab and the public address that the QR code uses.
+        The QR address of a unit is `publicBaseUrl` plus `/aset/` plus the tag, for example `https://portal.example.org/aset/MGM-VRQ-001`.
       security: []
       responses:
         "200":
@@ -296,6 +299,7 @@ paths:
                   - id: 00000000-0000-4000-8000-000000000001
                     name: Example category
                     tone: blue
+                total: 1
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "422":
@@ -313,6 +317,7 @@ paths:
         A guest session or an admin session can call it.
         Each model shows the total, the held and the available quantity.
         A retired model is not listed.
+        The filter `available` narrows the list to the models that can be requested now.
       parameters:
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/Cursor"
@@ -331,6 +336,12 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: available
+          in: query
+          required: false
+          description: True returns only the models whose available quantity is above 0. False or no value lists every model.
+          schema:
+            type: boolean
       responses:
         "200":
           description: A page of models, ordered by name.
@@ -357,6 +368,7 @@ paths:
       description: >-
         Anyone can read it, because the QR label of a unit leads here.
         A request without an admin session gets only the tag, the status and the model.
+        The model has its category and its available quantity, so the page can show whether the item can be requested now.
         The serial number, the condition, the place and the related ticket are in the answer only for an admin session.
       security:
         - {}
@@ -395,7 +407,13 @@ paths:
         Such a session has no name, no NIM or NIP and no email, and a lookup can make one.
         A session with the wrong role answers 403 with the code `forbidden`.
         The service checks the limits, makes the number and the rows, and starts the ticket as `diajukan`.
-        A field that fails a rule answers 422. That covers a retired model, more items than the limit and more open tickets for the same email or NIM or NIP than the limit.
+        A field that fails a rule answers 422 with the code `validation_failed`, and `details` names each field with one of the codes below.
+        The code `too_many` means that a quantity is above the available quantity of the model at that moment. The field is `items[i].qty`, where `i` is the position of the item.
+        The code `model_retired` means that the model is retired. The field is `items[i].modelId`.
+        The code `too_many_items` means that the quantities added together are above `maxItemsPerRequest`. The field is `items`.
+        The code `too_many_open_tickets` means that the email or the NIM or NIP already has the most open tickets that the lab allows. The field is `requester`.
+        The codes `not_ub_email`, `required`, `invalid_format`, `out_of_range` and `too_long` can also come back for the other fields.
+        The check of the quantity runs when the ticket is created, and an approval later can still answer 409 with the code `stock_changed`.
         A limit of the number of new tickets for one IP address applies, and every request counts.
         A request with an `Idempotency-Key` that the session already used returns the first answer and ignores the new body.
         A request that fills the hidden field `website` gets a normal looking answer and creates nothing.
@@ -558,6 +576,7 @@ paths:
       summary: Cancel a ticket
       description: >-
         A guest session can cancel a ticket of the session in the status `diajukan`.
+        A second cancel of a ticket that is already `dibatalkan` answers 200 with the ticket and changes nothing.
         Any other status answers 409 with the code `status_conflict`.
         The request has no body.
       security:
@@ -593,7 +612,11 @@ paths:
       tags: [Admin tickets]
       operationId: listAdminTickets
       summary: List the queue of tickets
-      description: An admin session can call it. The list holds the tickets of every borrower, newest first, and can be filtered by status.
+      description: >-
+        An admin session can call it.
+        The list holds the tickets of every borrower, newest first.
+        It can be filtered by status, by pickup date and by due date.
+        Every filter narrows the list, so a ticket has to pass all the filters that the request names.
       parameters:
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/Cursor"
@@ -608,9 +631,47 @@ paths:
         - name: status
           in: query
           required: false
-          description: Only the tickets with this effective status. The filter uses the effective status, so `dipinjam` lists only the tickets that are not late and `terlambat` lists the late ones. The value `siap_diambil` is the dashboard key `siapDiambil`.
+          style: form
+          explode: false
+          description: >-
+            Only the tickets with one of these effective statuses, as a list separated by commas, for example `status=disetujui,siap_diambil`.
+            The filter uses the effective status, so `dipinjam` lists only the tickets that are not late and `terlambat` lists the late ones.
+            The value `siap_diambil` is the dashboard key `siapDiambil`.
           schema:
-            $ref: "#/components/schemas/EffectiveTicketStatus"
+            type: array
+            minItems: 1
+            uniqueItems: true
+            items:
+              $ref: "#/components/schemas/EffectiveTicketStatus"
+          example: [disetujui, siap_diambil]
+        - name: pickupFrom
+          in: query
+          required: false
+          description: Only the tickets with a pickup date on this date or later. The date is in Asia/Jakarta.
+          schema:
+            type: string
+            format: date
+        - name: pickupTo
+          in: query
+          required: false
+          description: Only the tickets with a pickup date on this date or earlier. The date is in Asia/Jakarta.
+          schema:
+            type: string
+            format: date
+        - name: dueFrom
+          in: query
+          required: false
+          description: Only the tickets with a due date on this date or later. The date is in Asia/Jakarta.
+          schema:
+            type: string
+            format: date
+        - name: dueTo
+          in: query
+          required: false
+          description: Only the tickets with a due date on this date or earlier. The date is in Asia/Jakarta.
+          schema:
+            type: string
+            format: date
       responses:
         "200":
           description: A page of tickets.
@@ -669,8 +730,10 @@ paths:
         An approval moves the ticket to `disetujui` and a rejection moves it to `ditolak`.
         The body carries the version that the admin read.
         An approval that holds nothing, because every approved quantity is 0, answers 422 with the code `validation_failed`.
+        A `durationDays` above the `maxDurationDays` of `GET /api/config` answers 422 with the code `validation_failed` and the detail code `out_of_range`.
         A stale version answers 409 with the code `version_conflict` and another status answers 409 with the code `status_conflict`.
         Too little available stock for an approved quantity answers 409 with the code `stock_changed`.
+        The note of an approval or a rejection is stored in `Ticket.decisionNote`, which keeps the latest note, and also in the history entry of the change.
       security:
         - sessionCookie: []
           csrfToken: []
@@ -891,7 +954,9 @@ paths:
         An admin session can call it for a ticket in the status `disetujui` or `siap_diambil`.
         The ticket moves to `dibatalkan` and releases its hold.
         A ticket that nobody collects is closed this way.
+        A second cancel of a ticket that is already `dibatalkan` answers 200 with the ticket and changes nothing.
         A stale version answers 409 with the code `version_conflict` and another status answers 409 with the code `status_conflict`.
+        The note is stored in `Ticket.decisionNote`, which keeps the latest note, and also in the history entry of the change.
       security:
         - sessionCookie: []
           csrfToken: []
@@ -932,12 +997,56 @@ paths:
           $ref: "#/components/responses/InternalError"
         "503":
           $ref: "#/components/responses/Unavailable"
+  /api/admin/ticket-events:
+    get:
+      tags: [Admin tickets]
+      operationId: listTicketEvents
+      summary: Read the activity feed of all tickets
+      description: >-
+        An admin session can call it.
+        The list holds one event for each status change of every ticket, newest first.
+        The filter `ticketNumber` narrows it to one ticket.
+        A number that no ticket has gives an empty page.
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+        - name: ticketNumber
+          in: query
+          required: false
+          description: Only the events of this ticket.
+          schema:
+            $ref: "#/components/schemas/TicketNumber"
+      responses:
+        "200":
+          description: A page of events.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketEventPage"
+              examples:
+                page:
+                  $ref: "#/components/examples/TicketEventPage"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
   /api/admin/dashboard:
     get:
       tags: [Admin account]
       operationId: getDashboard
       summary: Read the counts for the dashboard
-      description: An admin session can call it. The ticket counts are for each effective status, so `dipinjam` does not count late tickets and `terlambat` counts them. The key `siapDiambil` counts the status `siap_diambil`.
+      description: >-
+        An admin session can call it.
+        The counts of `tickets` are for the open tickets of each effective status, so `dipinjam` does not count late tickets and `terlambat` counts them.
+        The key `siapDiambil` counts the status `siap_diambil`.
+        The object `byStatus` counts the tickets of every effective status, the closed ones included.
+        The list `byCategory` counts the units of each category.
       responses:
         "200":
           description: The counts.
@@ -958,6 +1067,25 @@ paths:
                   maintenance: 1
                   lost: 0
                   retired: 0
+                byStatus:
+                  diajukan: 2
+                  disetujui: 1
+                  siapDiambil: 0
+                  dipinjam: 3
+                  terlambat: 1
+                  dikembalikan: 12
+                  dibatalkan: 2
+                  ditolak: 1
+                byCategory:
+                  - categoryId: 00000000-0000-4000-8000-000000000001
+                    name: Example category
+                    tone: blue
+                    total: 25
+                    available: 20
+                    borrowed: 4
+                    maintenance: 1
+                    lost: 0
+                    retired: 0
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
@@ -988,6 +1116,7 @@ paths:
                   - id: 00000000-0000-4000-8000-000000000001
                     name: Example category
                     tone: blue
+                total: 1
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
@@ -1002,10 +1131,16 @@ paths:
       tags: [Admin assets]
       operationId: createCategory
       summary: Add a category
-      description: An admin session can call it. A name that another category uses answers 409 with the code `duplicate`.
+      description: >-
+        An admin session can call it.
+        A name that another category uses answers 409 with the code `duplicate`, and the uniqueness of names ignores letter case.
+        The error carries `details` with the field `name` and the code `duplicate`.
+        A request with an `Idempotency-Key` that the session already used returns the first answer and ignores the new body.
       security:
         - sessionCookie: []
           csrfToken: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -1097,22 +1232,41 @@ paths:
       summary: Add a model
       description: >-
         An admin session can call it.
-        A name or a prefix that another model uses answers 409 with the code `duplicate`.
+        The body names the category with either `categoryId` or `newCategory`, and never both.
+        A `newCategory` is created in the same transaction as the model.
+        A `newCategory` whose name already exists, ignoring letter case, reuses the existing category and does not fail.
+        A name or a prefix that another model uses answers 409 with the code `duplicate`, and the uniqueness of names and prefixes ignores letter case.
+        The error carries `details` with the field `name` or `prefix` and the code `duplicate`.
         A new model has no units, so its quantities are 0.
+        A request with an `Idempotency-Key` that the session already used returns the first answer and ignores the new body.
       security:
         - sessionCookie: []
           csrfToken: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
           application/json:
             schema:
               $ref: "#/components/schemas/ModelInput"
-            example:
-              name: Example headset
-              categoryId: 00000000-0000-4000-8000-000000000001
-              description: A headset for an example prototype.
-              prefix: VRQ
+            examples:
+              existingCategory:
+                summary: A model in an existing category
+                value:
+                  name: Example headset
+                  categoryId: 00000000-0000-4000-8000-000000000001
+                  description: A headset for an example prototype.
+                  prefix: VRQ
+              newCategory:
+                summary: A model with a new category
+                value:
+                  name: Example headset
+                  newCategory:
+                    name: Example category
+                    tone: blue
+                  description: A headset for an example prototype.
+                  prefix: VRQ
       responses:
         "201":
           description: The model exists.
@@ -1144,8 +1298,10 @@ paths:
       summary: Change a model
       description: >-
         An admin session can call it.
-        A name that another model uses answers 409 with the code `duplicate`.
+        A name that another model uses answers 409 with the code `duplicate`, and the uniqueness of names ignores letter case.
+        The error carries `details` with the field `name` and the code `duplicate`.
         Retiring a model that an open ticket asks for answers 409 with the code `status_conflict`.
+        The route has no version, so two admins who change the same model do not conflict and the last write wins.
       security:
         - sessionCookie: []
           csrfToken: []
@@ -1222,11 +1378,15 @@ paths:
       description: >-
         An admin session can call it.
         The service locks the model row and makes the tags in order, so two admins never get the same number.
+        A serial number that another unit uses answers 409 with the code `duplicate`, and the uniqueness of serial numbers ignores letter case.
+        The error carries `details` with the field `serial`, the code `duplicate` and the `existingTag` of the other unit.
+        A request with an `Idempotency-Key` that the session already used returns the first answer and ignores the new body.
       security:
         - sessionCookie: []
           csrfToken: []
       parameters:
         - $ref: "#/components/parameters/ModelId"
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -1268,7 +1428,7 @@ paths:
       tags: [Admin assets]
       operationId: listUnits
       summary: List the units
-      description: An admin session can call it.
+      description: An admin session can call it. The filters `modelId`, `categoryId` and `status` narrow the list, and a unit has to pass every filter that the request names.
       parameters:
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/Cursor"
@@ -1284,6 +1444,13 @@ paths:
           in: query
           required: false
           description: Only the units of this model.
+          schema:
+            type: string
+            format: uuid
+        - name: categoryId
+          in: query
+          required: false
+          description: Only the units whose model is in this category.
           schema:
             type: string
             format: uuid
@@ -1318,7 +1485,7 @@ paths:
       tags: [Admin assets]
       operationId: getUnit
       summary: Read one unit
-      description: An admin session can call it.
+      description: An admin session can call it. The answer has the lifecycle, the lifecycle note and the creation time, which the page of an asset does not have.
       parameters:
         - $ref: "#/components/parameters/UnitTag"
       responses:
@@ -1347,8 +1514,10 @@ paths:
       summary: Change the details of a unit
       description: >-
         An admin session can call it.
-        A serial number that another unit uses answers 409 with the code `duplicate`.
+        A serial number that another unit uses answers 409 with the code `duplicate`, and the uniqueness of serial numbers ignores letter case.
+        The error carries `details` with the field `serial`, the code `duplicate` and the `existingTag` of the other unit.
         A change of the lifecycle has its own route.
+        The route has no version, so two admins who change the same unit do not conflict and the last write wins.
       security:
         - sessionCookie: []
           csrfToken: []
@@ -1425,6 +1594,12 @@ paths:
       description: >-
         An admin session can call it.
         The change writes an event in the history of the unit.
+        The allowed changes are these.
+        From `active` to `maintenance`, `lost` or `retired`.
+        From `maintenance` to `active`, `lost` or `retired`.
+        From `lost` to `active` or `retired`.
+        From `retired` to `active`, which answers 409 with the code `status_conflict` while the model is retired.
+        Any other change answers 409 with the code `status_conflict`.
         A unit in an open ticket cannot leave `active`, and the service answers 409 with the code `unit_held`.
         A change that would leave less stock than is held answers 409 with the code `stock_changed`.
       security:
@@ -1759,7 +1934,8 @@ components:
       in: header
       required: false
       description: >-
-        A value that the client makes for one ticket request, such as a random identifier.
+        A value that the client makes for one create request, such as a random identifier.
+        Four routes accept it, which are `POST /api/tickets`, `POST /api/admin/models`, `POST /api/admin/categories` and `POST /api/admin/models/{id}/units`.
         The service stores it for the session with the answer for 24 hours.
         A repeat with the same key returns the first answer and ignores the new body.
         A repeat that arrives while the first request still runs answers 409 with the code `request_in_progress`.
@@ -1994,15 +2170,41 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
-          example:
-            error:
-              code: stock_changed
-              message: The stock of one item changed. Reload and try again.
-              details:
-                - field: items[0].qty
-                  code: too_many
-                  message: At most 2 are available.
-              requestId: c0a80101-example-request
+          examples:
+            stockChanged:
+              summary: The stock changed
+              value:
+                error:
+                  code: stock_changed
+                  message: The stock of one item changed. Reload and try again.
+                  details:
+                    - field: items[0].qty
+                      code: too_many
+                      message: At most 2 are available.
+                  requestId: c0a80101-example-request
+            duplicateName:
+              summary: A name or a prefix is in use
+              value:
+                error:
+                  code: duplicate
+                  message: Another model has this name.
+                  details:
+                    - field: name
+                      code: duplicate
+                      message: Choose another name.
+                  requestId: c0a80101-example-request
+            duplicateSerial:
+              summary: A serial number is in use
+              value:
+                error:
+                  code: duplicate
+                  message: Another unit has this serial number.
+                  details:
+                    - field: serial
+                      code: duplicate
+                      message: The serial number belongs to MGM-VRQ-001.
+                      existingTag: MGM-VRQ-001
+                  requestId: c0a80101-example-request
     ValidationFailed:
       description: A field fails a rule. The list `details` has one entry for each field.
       headers:
@@ -2093,24 +2295,49 @@ components:
         - rate_limited
         - internal
         - unavailable
+    ErrorDetailCode:
+      type: string
+      description: >-
+        A stable short code of one field. A client branches on it, as it does on the `code` of the error.
+        `required` means that a field is missing or empty.
+        `invalid_format` means that the value has the wrong shape.
+        `out_of_range` means that a number is outside its limits, for example `durationDays` of an approval above `maxDurationDays`.
+        `too_long` means that a text is over its length limit.
+        `not_ub_email` means that the email is not of Universitas Brawijaya.
+        `too_many` means that a quantity is above the available quantity of the model.
+        `model_retired` means that a requested model is retired.
+        `too_many_items` means that a request holds more items than `maxItemsPerRequest`.
+        `too_many_open_tickets` means that the requester already has the most open tickets.
+        `duplicate` means that a name, a prefix or a serial number is already in use, and it comes with the error `duplicate`.
+      enum:
+        - required
+        - invalid_format
+        - out_of_range
+        - too_long
+        - not_ub_email
+        - too_many
+        - model_retired
+        - too_many_items
+        - too_many_open_tickets
+        - duplicate
     ErrorDetail:
       type: object
-      description: One field that failed a rule.
+      description: One field that failed a rule or clashed with another record.
       required: [field, code, message]
       properties:
         field:
           type: string
-          description: The path of the field in the body, such as `items[0].qty`.
+          description: The path of the field in the body, such as `items[0].qty`. For the error `duplicate` it is `name`, `prefix` or `serial`.
           examples:
             - items[0].qty
         code:
-          type: string
-          description: A short word such as `required`, `too_long`, `too_many`, `invalid_format`, `not_ub_email` or `out_of_range`.
-          examples:
-            - too_many
+          $ref: "#/components/schemas/ErrorDetailCode"
         message:
           type: string
           description: A text for people. It may change.
+        existingTag:
+          description: The tag of the other unit. It is present only for a serial number that clashes with another unit.
+          $ref: "#/components/schemas/UnitTag"
     ErrorBody:
       type: object
       required: [code, message, requestId]
@@ -2122,7 +2349,7 @@ components:
           description: A text for people. It may change, so a client never branches on it.
         details:
           type: array
-          description: One entry for each field that failed. Only the code `validation_failed` and a few conflict codes carry it.
+          description: One entry for each field that failed. Only the codes `validation_failed`, `stock_changed` and `duplicate` carry it.
           items:
             $ref: "#/components/schemas/ErrorDetail"
         requestId:
@@ -2143,12 +2370,16 @@ components:
     Page:
       type: object
       description: The shape of every list answer. A typed page below adds the type of its items.
-      required: [items]
+      required: [items, total]
       properties:
         items:
           type: array
           items:
             type: object
+        total:
+          type: integer
+          minimum: 0
+          description: The number of all items that match the query, and not only the items of this page.
         nextCursor:
           $ref: "#/components/schemas/Cursor"
 
@@ -2204,7 +2435,10 @@ components:
       enum: [diajukan, disetujui, siap_diambil, dipinjam, dikembalikan, dibatalkan, ditolak]
     EffectiveTicketStatus:
       type: string
-      description: The status that a client shows. It is the stored status, except that a `dipinjam` ticket past its due date shows `terlambat`. The status `terlambat` is never stored.
+      description: >-
+        The status that a client shows.
+        It is the stored status, except that a ticket in `dipinjam` is `terlambat` when today in Asia/Jakarta is after the due date.
+        The status `terlambat` is never stored.
       enum: [diajukan, disetujui, siap_diambil, dipinjam, terlambat, dikembalikan, dibatalkan, ditolak]
     UnitLifecycle:
       type: string
@@ -2276,7 +2510,7 @@ components:
         publicBaseUrl:
           type: string
           format: uri
-          description: The public address of the portal without a trailing slash. A QR label holds this address followed by the path of the page of the unit.
+          description: The public address of the portal without a trailing slash. The QR address of a unit is this value plus `/aset/` plus the tag of the unit.
           examples:
             - https://portal.example.org
         limits:
@@ -2493,18 +2727,43 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/Model"
+    NewCategory:
+      type: object
+      description: A category that the service creates together with the model. A name that already exists, ignoring letter case, reuses the existing category and does not fail.
+      required: [name, tone]
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 60
+          examples:
+            - Example category
+        tone:
+          $ref: "#/components/schemas/Tone"
     ModelInput:
       type: object
-      required: [name, categoryId, prefix]
+      description: >-
+        A new model.
+        The body has exactly one of `categoryId` and `newCategory`.
+        A body with both or with neither fails the rule.
+      required: [name, prefix]
+      oneOf:
+        - title: A model in an existing category
+          required: [categoryId]
+        - title: A model with a new category
+          required: [newCategory]
       properties:
         name:
           type: string
           minLength: 2
           maxLength: 100
-          description: A name that no other model has. A repeat answers 409 with the code `duplicate`.
+          description: A name that no other model has, ignoring letter case. A repeat answers 409 with the code `duplicate`.
         categoryId:
           type: string
           format: uuid
+          description: The identifier of an existing category.
+        newCategory:
+          $ref: "#/components/schemas/NewCategory"
         description:
           type: string
           maxLength: 500
@@ -2512,7 +2771,7 @@ components:
         prefix:
           type: string
           pattern: "^[A-Z0-9]{2,6}$"
-          description: The part of the unit tags of this model, for example `VRQ` for `MGM-VRQ-001`. A prefix that another model uses answers 409 with the code `duplicate`.
+          description: The part of the unit tags of this model, for example `VRQ` for `MGM-VRQ-001`. A prefix that another model uses, ignoring letter case, answers 409 with the code `duplicate`.
     ModelPatch:
       type: object
       description: >-
@@ -2538,7 +2797,7 @@ components:
     Unit:
       type: object
       description: A unit as an admin sees it.
-      required: [tag, modelId, modelName, serial, condition, place, lifecycle, lifecycleNote, status, createdAt]
+      required: [tag, modelId, modelName, categoryId, categoryName, serial, condition, place, lifecycle, lifecycleNote, status, createdAt]
       properties:
         tag:
           $ref: "#/components/schemas/UnitTag"
@@ -2547,6 +2806,15 @@ components:
           format: uuid
         modelName:
           type: string
+        categoryId:
+          type: string
+          format: uuid
+          description: The category of the model of the unit.
+        categoryName:
+          type: string
+          description: The name of that category.
+          examples:
+            - Example category
         serial:
           type:
             - string
@@ -2657,6 +2925,9 @@ components:
       description: >-
         A change of the lifecycle of a unit.
         A change to `lost` or `retired` needs a note.
+        The allowed changes are `active` to `maintenance`, `lost` or `retired`, `maintenance` to `active`, `lost` or `retired`, `lost` to `active` or `retired`, and `retired` to `active`.
+        A change from `retired` to `active` answers 409 with the code `status_conflict` while the model is retired.
+        Any other change answers 409 with the code `status_conflict`.
         A unit in an open ticket cannot leave `active`, and the service answers 409 with the code `unit_held`.
         A change that would leave less stock than is held answers 409 with the code `stock_changed`.
       required: [lifecycle]
@@ -2716,7 +2987,8 @@ components:
                 $ref: "#/components/schemas/UnitEvent"
     AssetModelSummary:
       type: object
-      required: [id, name, description, categoryId]
+      description: The model of a unit with its category and its available quantity.
+      required: [id, name, description, categoryId, category, available]
       properties:
         id:
           type: string
@@ -2728,6 +3000,12 @@ components:
         categoryId:
           type: string
           format: uuid
+        category:
+          $ref: "#/components/schemas/Category"
+        available:
+          type: integer
+          minimum: 0
+          description: The available quantity of the model, which is its total minus its held quantity, and 0 when that is negative.
     PublicAsset:
       type: object
       description: The public page of a unit. It shows only the tag, the status and the model, and no other field is valid.
@@ -2742,7 +3020,9 @@ components:
           $ref: "#/components/schemas/AssetModelSummary"
     AdminAsset:
       type: object
-      description: The page of a unit for an admin. It adds the serial number, the condition, the place and the related ticket.
+      description: >-
+        The page of a unit for an admin. It adds the serial number, the condition, the place and the related ticket.
+        An admin edit screen reads `GET /api/admin/units/{tag}`, which also has the lifecycle, the lifecycle note and the creation time.
       required: [tag, status, model, serial, condition, place, relatedTicket]
       properties:
         tag:
@@ -2852,6 +3132,7 @@ components:
           type:
             - string
             - "null"
+          description: The note of the change, or null when it had none. The retention job clears it after the retention period.
     TicketRequester:
       type: object
       description: The requester of a ticket. The fields are null after the retention job anonymized the ticket.
@@ -2933,6 +3214,10 @@ components:
           type:
             - string
             - "null"
+          description: >-
+            The latest note of an approval, a rejection or an admin cancel.
+            The same note is also in the history entry of that change.
+            The notes of a return are not here. They are only in the history and in the ticket units.
         history:
           type: array
           description: One entry for each status change, oldest first.
@@ -2943,6 +3228,41 @@ components:
             - string
             - "null"
           format: date-time
+    TicketEvent:
+      type: object
+      description: One status change of a ticket, as the activity feed of an admin shows it.
+      required: [id, at, ticketNumber, status, actorKind, actorName, note]
+      properties:
+        id:
+          type: string
+          format: uuid
+        at:
+          type: string
+          format: date-time
+        ticketNumber:
+          $ref: "#/components/schemas/TicketNumber"
+        status:
+          $ref: "#/components/schemas/TicketStatus"
+        actorKind:
+          $ref: "#/components/schemas/ActorKind"
+        actorName:
+          type:
+            - string
+            - "null"
+          description: The name of the admin for an admin action, and the name of the requester for a guest action. It is null after the retention job anonymized the ticket.
+        note:
+          type:
+            - string
+            - "null"
+    TicketEventPage:
+      allOf:
+        - $ref: "#/components/schemas/Page"
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/TicketEvent"
     TicketUnit:
       type: object
       description: A unit that a ticket really holds.
@@ -3002,6 +3322,7 @@ components:
         An approval of a ticket in the status `diajukan`.
         It carries the approved quantity of every model of the ticket, which is at most the requested quantity, and may change the days.
         At least one item has an approved quantity above 0, because an approval that holds nothing answers 422 with the code `validation_failed`.
+        The approved days are at least 1 and at most the `maxDurationDays` of `GET /api/config`. A larger value answers 422 with the code `validation_failed` and the detail code `out_of_range`.
         The service locks the models and answers 409 with the code `stock_changed` when the available quantity is too low.
       required: [version, decision, items]
       properties:
@@ -3024,7 +3345,7 @@ components:
         durationDays:
           type: integer
           minimum: 1
-          description: The approved days. It defaults to the requested days.
+          description: The approved days, from 1 up to the `maxDurationDays` of `GET /api/config`. It defaults to the requested days. A larger value answers 422 with the detail code `out_of_range`.
         note:
           $ref: "#/components/schemas/Note"
     RejectDecision:
@@ -3124,7 +3445,7 @@ components:
     DashboardCounts:
       type: object
       description: Counts for the dashboard of the admin.
-      required: [tickets, units]
+      required: [tickets, units, byStatus, byCategory]
       properties:
         tickets:
           type: object
@@ -3146,6 +3467,40 @@ components:
             terlambat:
               type: integer
               minimum: 0
+        byStatus:
+          type: object
+          description: The count of tickets for every effective status, the closed ones included. The count of `dipinjam` does not include late tickets, and `terlambat` counts them. The key `siapDiambil` is the status `siap_diambil`.
+          required: [diajukan, disetujui, siapDiambil, dipinjam, terlambat, dikembalikan, dibatalkan, ditolak]
+          properties:
+            diajukan:
+              type: integer
+              minimum: 0
+            disetujui:
+              type: integer
+              minimum: 0
+            siapDiambil:
+              type: integer
+              minimum: 0
+            dipinjam:
+              type: integer
+              minimum: 0
+            terlambat:
+              type: integer
+              minimum: 0
+            dikembalikan:
+              type: integer
+              minimum: 0
+            dibatalkan:
+              type: integer
+              minimum: 0
+            ditolak:
+              type: integer
+              minimum: 0
+        byCategory:
+          type: array
+          description: The count of units for each category, ordered by the name of the category. A category with no units is listed with zeros.
+          items:
+            $ref: "#/components/schemas/CategoryUnitCounts"
         units:
           type: object
           description: The count of units for each status.
@@ -3166,6 +3521,36 @@ components:
             retired:
               type: integer
               minimum: 0
+    CategoryUnitCounts:
+      type: object
+      description: The count of units of one category. The field `total` is the sum of the five status counts.
+      required: [categoryId, name, tone, total, available, borrowed, maintenance, lost, retired]
+      properties:
+        categoryId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        tone:
+          $ref: "#/components/schemas/Tone"
+        total:
+          type: integer
+          minimum: 0
+        available:
+          type: integer
+          minimum: 0
+        borrowed:
+          type: integer
+          minimum: 0
+        maintenance:
+          type: integer
+          minimum: 0
+        lost:
+          type: integer
+          minimum: 0
+        retired:
+          type: integer
+          minimum: 0
     AdminProfile:
       type: object
       required: [id, name, email, totpEnabled, passwordExpiresAt, recoveryCodesLeft]
@@ -3316,6 +3701,7 @@ components:
             total: 5
             held: 2
             available: 3
+        total: 1
     PublicAsset:
       summary: The answer to anyone
       value:
@@ -3326,6 +3712,11 @@ components:
           name: Example headset
           description: A headset for an example prototype.
           categoryId: 00000000-0000-4000-8000-000000000001
+          category:
+            id: 00000000-0000-4000-8000-000000000001
+            name: Example category
+            tone: blue
+          available: 3
     AdminAsset:
       summary: The answer to an admin session
       value:
@@ -3336,6 +3727,11 @@ components:
           name: Example headset
           description: A headset for an example prototype.
           categoryId: 00000000-0000-4000-8000-000000000001
+          category:
+            id: 00000000-0000-4000-8000-000000000001
+            name: Example category
+            tone: blue
+          available: 3
         serial: EXAMPLE-SERIAL-001
         condition: Good
         place: Example shelf
@@ -3460,6 +3856,7 @@ components:
                 actorKind: guest
                 note: null
             anonymizedAt: null
+        total: 40
         nextCursor: example-cursor
     LookupResult:
       summary: A found ticket
@@ -3518,12 +3915,15 @@ components:
             available: 3
             prefix: VRQ
             retiredAt: null
+        total: 1
     Unit:
       summary: A unit
       value:
         tag: MGM-VRQ-001
         modelId: 00000000-0000-4000-8000-000000000002
         modelName: Example headset
+        categoryId: 00000000-0000-4000-8000-000000000001
+        categoryName: Example category
         serial: EXAMPLE-SERIAL-001
         condition: Good
         place: Example shelf
@@ -3538,6 +3938,8 @@ components:
           - tag: MGM-VRQ-001
             modelId: 00000000-0000-4000-8000-000000000002
             modelName: Example headset
+            categoryId: 00000000-0000-4000-8000-000000000001
+            categoryName: Example category
             serial: null
             condition: Good
             place: Example shelf
@@ -3548,6 +3950,8 @@ components:
           - tag: MGM-VRQ-002
             modelId: 00000000-0000-4000-8000-000000000002
             modelName: Example headset
+            categoryId: 00000000-0000-4000-8000-000000000001
+            categoryName: Example category
             serial: null
             condition: Good
             place: Example shelf
@@ -3562,6 +3966,8 @@ components:
           - tag: MGM-VRQ-001
             modelId: 00000000-0000-4000-8000-000000000002
             modelName: Example headset
+            categoryId: 00000000-0000-4000-8000-000000000001
+            categoryName: Example category
             serial: EXAMPLE-SERIAL-001
             condition: Good
             place: Example shelf
@@ -3569,6 +3975,7 @@ components:
             lifecycleNote: null
             status: available
             createdAt: "2026-11-17T03:00:00Z"
+        total: 1
     UnitEventPage:
       summary: A page with one event
       value:
@@ -3580,3 +3987,16 @@ components:
             adminName: Example Admin
             note: null
             ticketNumber: null
+        total: 1
+    TicketEventPage:
+      summary: A page with one event
+      value:
+        items:
+          - id: 00000000-0000-4000-8000-000000000011
+            at: "2026-11-17T03:00:00Z"
+            ticketNumber: MGM-2611-0001-K7QX
+            status: diajukan
+            actorKind: guest
+            actorName: Example Borrower
+            note: null
+        total: 1

@@ -38,7 +38,7 @@ All tables live in one PostgreSQL database. Ids are UUIDs made by the service. T
 - The number has the form `MGM-yymm-nnnn-XXXX`. The part `yymm` is the month in Asia/Jakarta. The part `nnnn` comes from `ticket_counters` in the transaction that inserts the ticket. The suffix `XXXX` has four characters from an alphabet of 32 characters without `I`, `O`, `0` and `1`, drawn from `crypto/rand`.
 - The status is one of `diajukan`, `disetujui`, `siap_diambil`, `dipinjam`, `dikembalikan`, `dibatalkan` and `ditolak`. The status `terlambat` is not stored. It is derived when a ticket is read, from the status `dipinjam` and a due date before today in Asia/Jakarta, and the API shows it as `effectiveStatus`. The due date is the pickup date plus the approved days, or the requested days when none were approved.
 - `version` starts at 1 and grows with each change. An admin request carries the version it read, and a stale version is refused.
-- `decision_note` holds the latest note of an approval, a reject or an admin cancel, and the same note is in the history row. The notes of a handover and a return are only in the history and in the notes of the ticket units.
+- `decision_note` holds the latest note of an approval, a reject or an admin cancel, and the same note is in the history row. The notes of a return are only in the history and in the notes of the ticket units.
 - A partial unique index on `ticket_units (unit_id) where returned_at is null` makes it impossible that two open tickets hold the same unit.
 - A ticket asks for models. The units are chosen at handover, when the admin scans the QR label of each unit.
 - An open ticket, for the limit of open tickets, is a ticket in the status `diajukan`, `disetujui`, `siap_diambil` or `dipinjam`.
