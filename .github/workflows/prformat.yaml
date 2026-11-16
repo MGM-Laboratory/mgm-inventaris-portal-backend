@@ -90,7 +90,9 @@ jobs:
           done < <(jq -r .body <<<"$pr")
 
           # A merge commit of the base branch, such as the one of update-branch, has two parents and is not counted
-          commits="$(gh api "repos/$GH_REPO/pulls/$PULL_REQUEST/commits" --paginate --jq '.[] | select((.parents | length) == 1) | .sha' | wc -l | tr -d '[:space:]')"
+          # The answer is read into a variable first, so that a failed call stops the step with its own error and never counts as 0 commits
+          shas="$(gh api "repos/$GH_REPO/pulls/$PULL_REQUEST/commits" --paginate --jq '.[] | select((.parents | length) == 1) | .sha')"
+          commits="$(printf '%s\n' "$shas" | sed '/^$/d' | wc -l | tr -d '[:space:]')"
           if [ "$bullets" -ne "$commits" ]; then
             fail "The body has $bullets bullets and the pull request has $commits commits, list one bullet for each commit."
           fi
