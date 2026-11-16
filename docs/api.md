@@ -1,6 +1,6 @@
 # API
 
-Status of this page. It describes the planned contract. `openapi.yaml` is the full contract and is kept in step with the routes. This page explains the rules that every route shares.
+Status of this page. It describes the planned contract. A hand written `openapi.yaml` will hold the full contract and will be kept in step with the routes. It is added in a later pull request. This page explains the rules that every route shares.
 
 ## Basics
 
@@ -19,10 +19,17 @@ Status of this page. It describes the planned contract. `openapi.yaml` is the fu
 | Admin session | 30 minutes idle, 8 hours at most |
 | CSRF header | `X-CSRF-Token` on every `POST`, `PATCH` and `DELETE` |
 
-- `POST /api/session/guest` and `POST /api/admin/session` answer with a `csrfToken` in the body. `GET /api/session` returns it again.
-- A write without the right header answers `403` with the code `csrf_failed`. A write whose `Origin` header names another host answers `403` with the code `origin_not_allowed`.
+- `POST /api/session/guest`, `POST /api/admin/session` and `POST /api/tickets/lookup` answer with a `csrfToken` in the body. `GET /api/session` returns it again.
+- These three routes can be called without a session, so they carry no CSRF token. They rely on the `Origin` check below and on their rate limits.
+- A write whose `Origin` header names another host answers `403` with the code `origin_not_allowed`. A write with no `Origin` header is accepted only when `Sec-Fetch-Site` is `same-origin`.
+- Any other write without the right CSRF header answers `403` with the code `csrf_failed`.
+- A sign in makes a new session and ends the one that came with the request.
 - An expired or missing session answers `401` with the code `session_expired` or `unauthenticated`. The frontend then shows the sign in page.
 - A route that needs a role the session does not have answers `403` with the code `forbidden`.
+
+## Client address
+
+The service reads the client address from the header `X-Real-IP` only when the request comes from the proxy address in the settings. Otherwise it uses the address of the peer. An IPv6 address counts as its `/64` prefix. The health routes are served on an internal port and are not routed by the proxy.
 
 ## Errors
 
@@ -42,13 +49,12 @@ Every error has the same body.
 | Status | When | Codes |
 | --- | --- | --- |
 | 400 | The body cannot be read | `bad_request` |
-| 401 | No session or an expired one | `unauthenticated`, `session_expired`, `invalid_credentials`, `totp_required` |
+| 401 | No session or an expired one | `unauthenticated`, `session_expired`, `invalid_credentials` |
 | 403 | The role or the CSRF check fails | `forbidden`, `csrf_failed`, `origin_not_allowed` |
 | 404 | The thing does not exist or may not be seen | `not_found`, `ticket_not_found` |
 | 409 | The state changed under the request | `stock_changed`, `version_conflict`, `status_conflict`, `unit_held`, `unit_unavailable`, `duplicate` |
 | 422 | A field fails validation | `validation_failed` with `details` |
-| 423 | The account is locked | `account_locked` |
-| 429 | A rate limit is over | `rate_limited`, with the header `Retry-After` in seconds |
+| 429 | A rate limit is over, also after too many failed admin sign ins | `rate_limited`, with the header `Retry-After` in seconds |
 | 500 | A bug or an outage | `internal` |
 | 503 | The database is not reachable | `unavailable` |
 
@@ -65,29 +71,32 @@ These are settings. The lab decides the final values, and the values here are th
 | Open tickets for one email or one NIM or NIP | 3 |
 | Guest sign in for one IP address | 10 each hour |
 | New tickets for one IP address | 5 each hour |
-| Ticket lookups for one IP address, and for one ticket number | 20 and 10 each hour |
-| Failed admin sign ins for one account | 5 in 15 minutes, then a lock of 15 minutes |
+| Failed ticket lookups for one IP address, and for one ticket number without its last part | 20 and 10 each hour |
+| Failed admin sign ins for one account from one IP address | 5 in 15 minutes, then 15 minutes of `429` for that pair |
 | Admin sign in attempts for one IP address | 20 each hour |
 
-The guest form has a hidden field named `website`. A request that fills it is refused with `bad_request`.
+The guest form has a hidden trap field. A request that fills it gets a normal looking answer and creates nothing.
+
+The counters cover only the sign in routes, the ticket creation and the ticket lookup. The key of a lookup limit is the part `yymm-nnnn` of the number, because the last part is the secret.
 
 ## Roles
 
 | Role | How | Can |
 | --- | --- | --- |
-| Anyone | No session | Read the public settings, the public page of an asset, and look up a ticket with its number and email |
-| Guest | A guest session | Read the catalog, create tickets, read and cancel the tickets of the session |
+| Anyone | No session | Read the public settings, the public page of an asset, and look up a ticket with its number and email. A lookup starts a guest session without an identity |
+| Guest | A guest session | Read the catalog, create tickets (needs the identity), read and cancel the tickets of the session |
 | Admin | An admin session | Everything above, and all admin routes |
 
-A guest session needs the name, the NIM or NIP and an email that ends in `ub.ac.id`, also with a subdomain such as `student.ub.ac.id`.
+An identified guest session needs the name, the NIM or NIP and an email that ends in `ub.ac.id`, also with a subdomain such as `student.ub.ac.id`. The service compares the email in lower case.
 
 ## Main flows
 
 1. **Request.** A guest signs in, reads the catalog, and posts a ticket. The service checks the limits, creates the number and the rows, and answers `201` with the ticket. The ticket starts as `diajukan`.
-2. **Decision.** An admin posts a decision with the version it read. An approval carries the approved quantity of each model and may change the days. The service locks the models, checks the available quantity, and answers `409` with `stock_changed` when it is too low.
-3. **Handover.** The admin posts the tags of the units that it took from the shelf, one for each approved item. The ticket becomes `dipinjam`.
-4. **Return.** The admin posts the tag of each unit with an outcome, which is `ok`, `maintenance` or `lost`. The ticket becomes `dikembalikan`, and a unit with another outcome changes its lifecycle.
-5. **Cancel.** A guest may cancel a ticket in the status `diajukan` or `menunggu_verifikasi`. An admin may reject a ticket in the status `diajukan` with a note.
+2. **Sign in of an admin.** The body holds the email, the password and either a TOTP code or a recovery code. The service checks all of them and answers `invalid_credentials` for any wrong value, so the answer does not say which one is wrong. An admin who has no TOTP yet gets a setup session that can call only the TOTP setup route.
+3. **Decision.** An admin posts a decision with the version it read. An approval carries the approved quantity of each model and may change the days. The service locks the models, checks the available quantity, and answers `409` with `stock_changed` when it is too low.
+4. **Handover.** The admin posts the tags of the units that it took from the shelf, one for each approved item. The ticket becomes `dipinjam`.
+5. **Return.** The admin posts the tag of every unit of the ticket with an outcome, which is `ok`, `maintenance` or `lost`. The return is all or nothing. The ticket becomes `dikembalikan`, and a unit with another outcome changes its lifecycle.
+6. **Cancel.** A guest may cancel a ticket in the status `diajukan` or `menunggu_verifikasi`. An admin may reject a ticket in the status `diajukan` with a note, and may cancel a ticket in the status `disetujui` or `siap_diambil` with a note.
 
 ## Routes
 
@@ -114,6 +123,7 @@ The table is a map. The exact bodies are in `openapi.yaml`.
 | `POST /api/admin/tickets/{number}/ready` | Admin | Mark ready for pickup |
 | `POST /api/admin/tickets/{number}/handover` | Admin | Hand over the units |
 | `POST /api/admin/tickets/{number}/return` | Admin | Take the units back |
+| `POST /api/admin/tickets/{number}/cancel` | Admin | Cancel an approved ticket with a note |
 | `GET /api/admin/dashboard` | Admin | Counts for the dashboard |
 | `GET/POST /api/admin/categories` | Admin | List and add categories |
 | `GET/POST /api/admin/models`, `PATCH/DELETE /api/admin/models/{id}` | Admin | Manage models |
@@ -121,5 +131,10 @@ The table is a map. The exact bodies are in `openapi.yaml`.
 | `GET /api/admin/units`, `GET/PATCH/DELETE /api/admin/units/{tag}` | Admin | Manage units |
 | `POST /api/admin/units/{tag}/lifecycle` | Admin | Change the lifecycle with a note |
 | `GET /api/admin/units/{tag}/events` | Admin | History of a unit |
-| `GET /api/admin/me`, `POST /api/admin/me/password`, `POST /api/admin/me/totp` | Admin | Own account and TOTP setup |
-| `GET /healthz`, `GET /readyz` | The proxy | Health checks, not under `/api` |
+| `GET /api/admin/unit-events` | Admin | History of all units, newest first |
+| `GET /api/admin/me`, `POST /api/admin/me/password`, `POST /api/admin/me/totp`, `POST /api/admin/me/recovery-codes` | Admin | Own account, TOTP setup and new recovery codes |
+| `GET /healthz`, `GET /readyz` | The proxy | Health checks on the internal port, not under `/api` |
+
+## Status of a unit
+
+A unit shows one status. The status is `retired`, `lost` or `maintenance` for the lifecycle of the same name. An active unit is `borrowed` while it is in an open row of a ticket, and `available` otherwise. A unit has no reserved status, because units are chosen at handover and not when a ticket is approved.
