@@ -27,7 +27,7 @@ Every pull request runs the checks below. The ruleset of the repository requires
 - **Conventional commits** reads every commit message and the title of the pull request.
 - **PR format** reads the branch name, the label, the assignee and the body.
 - **Config gate** runs actionlint, Zizmor, ShellCheck, ls-lint for file names and the Renovate validator.
-- **Security gate** summarizes dependency review, gitleaks and a Trivy filesystem scan. Dependency review fails on a finding of severity high or above, and gitleaks fails on any finding. Trivy fails on a CRITICAL or HIGH finding and also sends its findings to code scanning.
+- **Security gate** summarizes dependency review, gitleaks and a Trivy filesystem scan. Dependency review fails on a finding of severity high or above, and gitleaks fails on any finding. Trivy fails on a CRITICAL or HIGH finding and also sends its findings to code scanning. For a pull request from a fork, the Trivy findings are not uploaded to code scanning, because a fork token cannot write there, and the check still fails on a CRITICAL or HIGH finding.
 - **pre-commit.ci** is not required by the ruleset, but its report should be clean. It runs repository hygiene checks on every pull request and does not push a fix.
 
 A commit message or a title that does not follow Conventional Commits blocks the merge. To revert a change, write the title as `revert: <summary>`, because the default title that the GitHub revert button makes is rejected. A lint warning or a deprecation notice in the output of a check is still something to fix before the pull request is done, even when it does not turn the check red.
@@ -46,5 +46,5 @@ Use Conventional Commits (`type(scope): summary`) in English, with one of feat, 
 - Write the title as a Conventional Commit, for example `fix(loans): reject a loan with no items`.
 - The body is only the list of commits, one bullet for each commit.
 - Add one label, `bug` for a fix, `enhancement` for a feature and `documentation` for docs only, and assign the pull request to yourself. A contributor without write access cannot assign it, so ask a maintainer to do it and then rerun the failed check.
-- The check Conventional commits reads every commit message and the title. The check PR format reads the branch, the label, the assignee and the body. A bad commit message needs a rebase that rewords it and a force push to your own branch. For a missing label or assignee, add it and rerun the failed check.
+- The check Conventional commits reads every commit message and the title. The check PR format reads the branch, the label, the assignee and the body. A bad commit message needs a rebase that rewords it and a force push to your own branch. For a missing label or assignee, add it and ask a maintainer to rerun the failed check, because a rerun needs write access.
 - The maintainer merges with a merge commit, never a squash or a rebase.

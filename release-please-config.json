@@ -5,6 +5,7 @@
     ".": {
       "release-type": "go",
       "bump-minor-pre-major": true,
+      "initial-version": "0.1.0",
       "package-name": "mgm-inventaris-portal-backend",
       "include-v-in-tag": true,
       "changelog-path": "CHANGELOG.md",
