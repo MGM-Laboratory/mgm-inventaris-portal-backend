@@ -7,7 +7,8 @@ on:
 
 # Like commits.yaml, a run is never cancelled and every run has a group of its own, because GitHub keeps a cancelled run of a required
 # check as unmet. The pull request is read when the run starts and not from the event, so a rerun checks what the pull request looks
-# like now. A change of a label or an assignee starts a new run, so a removal fails the check. A later passing run does not replace a failed run of the same commit, so a rerun of the failed run clears it.
+# like now. A change of a label or an assignee starts a new run, so a removal fails the check. A later passing run does not replace a
+# failed run of the same commit, so a rerun of the failed run clears it.
 concurrency:
   group: prformat-${{ github.run_id }}
   cancel-in-progress: false
