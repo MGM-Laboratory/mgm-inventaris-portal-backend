@@ -11,6 +11,7 @@ Every error answer has the body described in [`api.md`](api.md). The field `code
 | `session_expired` | 401 | The session reached its idle or absolute limit | Show the sign in page |
 | `invalid_credentials` | 401 | The email, the password or the code is wrong | Show one message for all of them, so the answer does not reveal which one is wrong |
 | `forbidden` | 403 | The session has not the role that the route needs | Show a message |
+| `identity_required` | 403 | The route needs a guest session with a name, a NIM or NIP and an email, and the session has none | Show the guest form |
 | `csrf_failed` | 403 | The CSRF header is missing or wrong | Read the token with `GET /api/session` and try again once |
 | `origin_not_allowed` | 403 | The `Origin` header of a write names another host, or it is missing and the request is not same origin | Do not retry |
 | `not_found` | 404 | The thing does not exist, or the session may not see it | Show not found |

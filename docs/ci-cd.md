@@ -43,7 +43,7 @@ The pre-commit.ci GitHub app runs the hooks of `.pre-commit-config.yaml` on ever
 
 ## API contract
 
-`openapi.yaml` in the root is the hand written contract of the API. It holds every route of `docs/api.md` with its bodies, its answers and its error codes. The job `OpenAPI lint` in the workflow `Config lint` runs the Redocly CLI on it with the `recommended` ruleset of `redocly.yaml`. A spec that does not lint blocks the merge through `Config gate`. A change to a route updates `openapi.yaml` in the same pull request. Renovate keeps the version of the CLI current.
+`openapi.yaml` in the root is the hand written contract of the API. It holds every route of `docs/api.md` with its bodies, its answers and its error codes. The job `OpenAPI lint` in the workflow `Config lint` runs the Redocly CLI on it with the `recommended` ruleset of `redocly.yaml`, where every rule that `recommended` leaves at warn is raised to error. A spec with an error blocks the merge through `Config gate`. A change to a route updates `openapi.yaml` in the same pull request. Renovate keeps the version of the CLI current.
 
 ## Naming rules
 
