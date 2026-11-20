@@ -84,12 +84,18 @@ func Open(ctx context.Context, url string, maxConns uint) (*pgxpool.Pool, error)
 	}
 }
 
-// Migrate applies every migration that is not applied yet. It is safe to call from two copies at the same time, because the
-// library holds an advisory lock of PostgreSQL while it runs, so the second copy waits and then finds nothing to do.
-//
-// During a rolling update the copy that still runs the old version can restart after the new copy applied a newer migration. The
-// library refuses to start from a version that it has no file for, so Migrate skips the step when the database is ahead of the
-// binary. That is only safe when every migration works with the code of the version before it.
+// AheadError means the database is at a migration that this binary has no file for, because a newer copy migrated it.
+type AheadError struct {
+	Database, Binary uint
+}
+
+func (e *AheadError) Error() string {
+	return fmt.Sprintf("the database is at migration version %d and this version of the service knows only up to %d, "+
+		"so start the newer version, or set MIGRATE_ON_START to false to run this one on purpose", e.Database, e.Binary)
+}
+
+// Migrate applies the pending migrations. The library holds an advisory lock of PostgreSQL while it applies them, so two copies never
+// migrate together and the second finds nothing to do.
 func Migrate(url string) error {
 	migrator, err := newMigrator(url)
 	if err != nil {
@@ -98,26 +104,40 @@ func Migrate(url string) error {
 
 	defer func() { _, _ = migrator.Close() }()
 
+	if err := checkNotAhead(migrator); err != nil {
+		return err
+	}
+
+	upErr := migrator.Up()
+	if upErr == nil || errors.Is(upErr, migrate.ErrNoChange) {
+		return nil
+	}
+
+	// a newer copy can migrate between the check above and the lock that Up waits for, and Up then fails on a version it has no file for
+	if aheadErr := checkNotAhead(migrator); aheadErr != nil {
+		return aheadErr
+	}
+
+	return fmt.Errorf("apply the migrations %w", upErr)
+}
+
+func checkNotAhead(migrator *migrate.Migrate) error {
 	current, dirty, err := migrator.Version()
-	if err != nil && !errors.Is(err, migrate.ErrNilVersion) {
+	if errors.Is(err, migrate.ErrNilVersion) || dirty {
+		return nil
+	}
+
+	if err != nil {
 		return fmt.Errorf("read the schema version %w", err)
 	}
 
-	if !dirty && !errors.Is(err, migrate.ErrNilVersion) {
-		newest, newestErr := newestVersion()
-		if newestErr != nil {
-			return newestErr
-		}
-
-		if current > newest {
-			slog.Warn("the database is ahead of this version, so no migration runs", "database", current, "binary", newest)
-
-			return nil
-		}
+	newest, err := newestVersion()
+	if err != nil {
+		return err
 	}
 
-	if err := migrator.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		return fmt.Errorf("apply the migrations %w", err)
+	if current > newest {
+		return &AheadError{Database: current, Binary: newest}
 	}
 
 	return nil

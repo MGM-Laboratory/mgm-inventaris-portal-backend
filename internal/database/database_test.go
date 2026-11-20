@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -87,6 +88,48 @@ func TestMigrateUpAndDown(t *testing.T) {
 
 	if err := database.Migrate(dbURL); err != nil {
 		t.Fatalf("migrate up after down %v", err)
+	}
+}
+
+func TestMigrateRefusesADatabaseAhead(t *testing.T) {
+	dbURL := dbtest.Empty(t)
+
+	if err := database.Migrate(dbURL); err != nil {
+		t.Fatalf("migrate up %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)
+	defer cancel()
+
+	pool, err := database.Open(ctx, dbURL, 2)
+	if err != nil {
+		t.Fatalf("open %v", err)
+	}
+
+	defer pool.Close()
+
+	// a newer copy of the service applied a migration that this binary has no file for
+	if _, err := pool.Exec(ctx, `update schema_migrations set version = 9999`); err != nil {
+		t.Fatalf("set the version ahead %v", err)
+	}
+
+	err = database.Migrate(dbURL)
+
+	var ahead *database.AheadError
+	if !errors.As(err, &ahead) {
+		t.Fatalf("Migrate gave %v, want an AheadError", err)
+	}
+
+	if ahead.Database != 9999 || ahead.Binary != 1 {
+		t.Fatalf("the error names versions %d and %d, want 9999 and 1", ahead.Database, ahead.Binary)
+	}
+
+	if !strings.Contains(err.Error(), "9999") || !strings.Contains(err.Error(), "MIGRATE_ON_START") {
+		t.Fatalf("the message is %q", err)
+	}
+
+	if got := scanString(t, pool, `select version::text from schema_migrations`); got != "9999" {
+		t.Fatalf("the refusal changed the version to %s", got)
 	}
 }
 
