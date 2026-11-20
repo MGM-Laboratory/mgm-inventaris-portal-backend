@@ -71,6 +71,11 @@ linters:
         text: G101
         linters:
           - gosec
+      # the Secure flag is a setting that production refuses to turn off, and the cookie name follows it
+      - path: ^internal/session/cookie\.go$
+        text: G124
+        linters:
+          - gosec
       # a test may print, and main decides how the program ends and what it prints
       - path: (_test\.go|^cmd/)
         linters:
