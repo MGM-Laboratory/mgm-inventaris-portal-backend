@@ -427,6 +427,28 @@ func TestReadyzSaysReadyWhileThePoolIsSaturated(t *testing.T) {
 	}
 }
 
+func TestReadyzKeepsTheEvidenceOfASaturatedPoolFromBeforeTheWait(t *testing.T) {
+	pinger := &countingPinger{err: context.DeadlineExceeded}
+	clock := &fakeClock{now: time.Unix(1000, 0)}
+
+	reads := 0
+	stats := func() PoolStats {
+		reads++
+
+		// the pool is full when the ping starts and free when it has failed
+		if reads == 1 {
+			return PoolStats{Acquired: 8, Max: 8}
+		}
+
+		return PoolStats{Acquired: 0, Max: 8}
+	}
+	h := newHealth(pinger, stats, time.Second, clock.Now)
+
+	if code, body := readyz(t, h); code != http.StatusOK || body != `{"status":"ready"}` {
+		t.Fatalf("a pool that was full before the failed ping answered %d %s", code, body)
+	}
+}
+
 func TestReadyzAnswers503WhileDraining(t *testing.T) {
 	h := newHealth(&countingPinger{}, nil, time.Second, time.Now)
 

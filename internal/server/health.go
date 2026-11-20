@@ -66,6 +66,9 @@ func (r *readiness) database() dbState {
 		return r.state
 	}
 
+	// a ping that waits for a free connection frees the pool by the time it fails, so the state before the wait counts as well
+	saturatedBefore := r.saturated()
+
 	ctx, cancel := context.WithTimeout(context.Background(), readyTimeout)
 	err := r.db.Ping(ctx)
 
@@ -74,7 +77,7 @@ func (r *readiness) database() dbState {
 	switch {
 	case err == nil:
 		r.state = dbOK
-	case r.saturated():
+	case saturatedBefore || r.saturated():
 		slog.Warn("the database check timed out while every connection of the pool is in use", "error", err)
 
 		r.state = dbBusy
