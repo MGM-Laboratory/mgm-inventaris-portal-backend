@@ -1,4 +1,5 @@
-package server
+// Package errchain describes an error for a log line without the values of a request.
+package errchain
 
 import (
 	"errors"
@@ -10,11 +11,11 @@ import (
 
 const maxChain = 16
 
-// errorChain lists the errors of a chain from the outside in, so a log line says what failed without a row or a value of the request.
+// Chain lists the errors of a chain from the outside in, so a log line says what failed without a row or a value of the request.
 // An entry holds the type. A wrapper made with fmt.Errorf adds its own words, a plain errors.New adds its text, and a PostgreSQL error
 // adds its code and constraint. Every other error adds only its type, because its text can hold a value of the request. A message
 // that is written in our code must therefore never format request data into itself.
-func errorChain(err error) []string {
+func Chain(err error) []string {
 	var chain []string
 
 	for range maxChain {

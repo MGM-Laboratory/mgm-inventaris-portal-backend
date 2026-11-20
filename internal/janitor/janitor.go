@@ -11,12 +11,14 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/errchain"
 	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/ratelimit"
 	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/session"
 )
 
 const (
-	// LockKey is the number of the advisory lock that a sweep holds. Nothing else in the service uses it.
+	// LockKey is the number of the advisory lock that a sweep holds. It is above the 32 bit range of the lock of the migrations, so the
+	// two never clash.
 	LockKey int64 = 7428104001
 	// counterRetention keeps a counter a long time after its window ended. The longest window is an hour, so this is a wide margin.
 	counterRetention = 24 * time.Hour
@@ -111,7 +113,7 @@ func sweepOnce(ctx context.Context, db DB, now func() time.Time) {
 
 	res, err := Sweep(ctx, db, now())
 	if err != nil {
-		slog.Warn("a sweep failed", "error", err)
+		slog.Warn("a sweep failed", "error_chain", errchain.Chain(err))
 
 		return
 	}

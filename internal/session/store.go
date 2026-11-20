@@ -9,6 +9,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+
+	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/errchain"
 )
 
 // touchInterval is how often a session may write last_seen_at, so a busy client does not write on every request.
@@ -115,6 +117,11 @@ func (s *Store) Load(ctx context.Context, token string) (Session, error) {
 		return Session{}, fmt.Errorf("read the session %w", err)
 	}
 
+	// an empty array scans as nil, and a later route would then serialize null
+	if sess.ViewableTickets == nil {
+		sess.ViewableTickets = []string{}
+	}
+
 	sess.Kind = Kind(kind)
 
 	limits, ok := LimitsFor(sess.Kind)
@@ -134,7 +141,7 @@ func (s *Store) Load(ctx context.Context, token string) (Session, error) {
 		touched, err := s.touch(ctx, sess.TokenHash, now)
 		if err != nil {
 			// the session is valid, and a missed write only shortens its idle time by a minute
-			slog.Warn("the session could not be touched", "error", err)
+			slog.Warn("the session could not be touched", "error_chain", errchain.Chain(err))
 		} else if touched {
 			sess.LastSeenAt = now
 		}

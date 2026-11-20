@@ -8,6 +8,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 
+	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/errchain"
 	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/ratelimit"
 	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/session"
 )
@@ -38,8 +39,8 @@ type sessionState struct {
 	current *session.Session
 	// cookieSent is true when the request carried a session cookie, whether or not it matched a live session.
 	cookieSent bool
-	// failed is true when the lookup hit a database error, so the guards answer 503 and not 401.
-	failed bool
+	// loadErr is the database error of the lookup. A guard answers 503 for an outage and 500 for a bug, and not 401.
+	loadErr error
 }
 
 type sessionStateKey struct{}
@@ -82,9 +83,11 @@ func LoadSession(store SessionStore, cookieName string) fiber.Handler {
 			state.current = &sess
 		case errors.Is(err, session.ErrNoSession):
 		default:
-			state.failed = true
+			state.loadErr = err
 
-			slog.Warn("the session could not be loaded", "request_id", requestID(c), "error_chain", errorChain(err))
+			if databaseUnreachable(err) {
+				slog.Warn("the session could not be loaded", "request_id", requestID(c), "error_chain", errchain.Chain(err))
+			}
 		}
 
 		return c.Next()
@@ -99,8 +102,8 @@ func requireSession(c fiber.Ctx) (*session.Session, error) {
 	switch {
 	case state.current != nil:
 		return state.current, nil
-	case state.failed:
-		return nil, NewError(CodeUnavailable)
+	case state.loadErr != nil:
+		return nil, dbError("load the session", state.loadErr)
 	case state.cookieSent:
 		return nil, NewError(CodeSessionExpired)
 	default:
