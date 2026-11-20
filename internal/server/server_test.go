@@ -29,6 +29,8 @@ func testConfig() config.Config {
 		MaxItemsPerRequest: 10,
 		MaxDurationDays:    30,
 		MaxOpenTickets:     3,
+		SecureCookie:       true,
+		GuestSigninPerHour: 60,
 	}
 }
 
@@ -56,7 +58,7 @@ func do(t *testing.T, app *fiber.App, method, path string, headers map[string]st
 }
 
 func TestConfigRoute(t *testing.T) {
-	res, body := do(t, NewAPI(testConfig()), http.MethodGet, "/api/config", nil)
+	res, body := do(t, newTestAPI(), http.MethodGet, "/api/config", nil)
 
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("status is %d, want 200", res.StatusCode)
@@ -108,7 +110,7 @@ func TestConfigRoute(t *testing.T) {
 }
 
 func TestHeadersOnEveryAnswer(t *testing.T) {
-	app := NewAPI(testConfig())
+	app := newTestAPI()
 
 	for _, path := range []string{"/api/config", "/api/nothing"} {
 		res, _ := do(t, app, http.MethodGet, path, nil)
@@ -124,7 +126,7 @@ func TestHeadersOnEveryAnswer(t *testing.T) {
 }
 
 func TestRequestID(t *testing.T) {
-	app := NewAPI(testConfig())
+	app := newTestAPI()
 
 	res, _ := do(t, app, http.MethodGet, "/api/config", map[string]string{"X-Request-Id": "client-id.1_ok"})
 	if got := res.Header.Get("X-Request-Id"); got != "client-id.1_ok" {
@@ -174,7 +176,7 @@ func TestEveryCodeHasItsDocumentedStatus(t *testing.T) {
 		t.Fatalf("the catalog has %d codes and the documented table has %d", len(catalog), len(want))
 	}
 
-	app := NewAPI(testConfig())
+	app := newTestAPI()
 
 	// every route is added before the first request
 	for code := range want {
@@ -195,7 +197,7 @@ func TestEveryCodeHasItsDocumentedStatus(t *testing.T) {
 }
 
 func TestErrorDetailsAndRetryAfter(t *testing.T) {
-	app := NewAPI(testConfig())
+	app := newTestAPI()
 
 	app.Get("/test/details", func(fiber.Ctx) error {
 		return NewError(CodeDuplicate, Detail{Field: "serial", Code: "duplicate", Message: "Used.", ExistingTag: "MGM-HDS-001"})
@@ -230,7 +232,7 @@ func TestErrorDetailsAndRetryAfter(t *testing.T) {
 }
 
 func TestUnexpectedErrorsHideTheirText(t *testing.T) {
-	app := NewAPI(testConfig())
+	app := newTestAPI()
 
 	app.Get("/test/plain", func(fiber.Ctx) error {
 		return errors.New("password=hunter2 failed for row 17")
@@ -263,7 +265,7 @@ func TestUnexpectedErrorsHideTheirText(t *testing.T) {
 }
 
 func TestFiberErrors(t *testing.T) {
-	app := NewAPI(testConfig())
+	app := newTestAPI()
 
 	app.Get("/test/teapot", func(fiber.Ctx) error { return fiber.NewError(fiber.StatusRequestEntityTooLarge, "too big") })
 	app.Get("/test/bad-gateway", func(fiber.Ctx) error { return fiber.NewError(fiber.StatusBadGateway, "upstream said no") })
@@ -281,7 +283,7 @@ func TestFiberErrors(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		res, body := do(t, app, tc.method, tc.path, nil)
+		res, body := do(t, app, tc.method, tc.path, sameOriginHeaders())
 		if res.StatusCode != tc.status {
 			t.Fatalf("%s %s answers %d, want %d", tc.method, tc.path, res.StatusCode, tc.status)
 		}
@@ -483,7 +485,7 @@ func captureLog(t *testing.T) *bytes.Buffer {
 
 func TestPanicIsLoggedWithItsStackAndNotAnswered(t *testing.T) {
 	logs := captureLog(t)
-	app := NewAPI(testConfig())
+	app := newTestAPI()
 
 	app.Get("/test/panic", func(fiber.Ctx) error {
 		panic("boom value")
@@ -519,7 +521,7 @@ func TestPanicIsLoggedWithItsStackAndNotAnswered(t *testing.T) {
 
 func TestInternalErrorIsLoggedAsAChain(t *testing.T) {
 	logs := captureLog(t)
-	app := NewAPI(testConfig())
+	app := newTestAPI()
 
 	app.Get("/test/chain", func(fiber.Ctx) error {
 		_, err := strconv.Atoi("secret-input-value")
@@ -548,11 +550,11 @@ func TestInternalErrorIsLoggedAsAChain(t *testing.T) {
 
 func TestAccessLogLabelsTheRoute(t *testing.T) {
 	logs := captureLog(t)
-	app := NewAPI(testConfig())
+	app := newTestAPI()
 
 	do(t, app, http.MethodGet, "/api/config", nil)
 	do(t, app, http.MethodGet, "/api/tickets/MGM-2611-0001-AAAA", nil)
-	do(t, app, http.MethodPost, "/api/config", nil)
+	do(t, app, http.MethodPost, "/api/config", sameOriginHeaders())
 
 	logged := logs.String()
 

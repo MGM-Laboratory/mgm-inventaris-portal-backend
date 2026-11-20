@@ -16,7 +16,10 @@ import (
 
 	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/config"
 	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/database"
+	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/janitor"
+	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/ratelimit"
 	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/server"
+	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/session"
 )
 
 // version is set at build time with -ldflags.
@@ -27,6 +30,8 @@ const (
 	// then stop together under shutdownTimeout, so a stop signal takes drainGrace plus shutdownTimeout at most.
 	drainGrace      = 3 * time.Second
 	shutdownTimeout = 15 * time.Second
+	// janitorInterval is the time between two sweeps of expired sessions and old counters.
+	janitorInterval = 10 * time.Minute
 )
 
 func main() {
@@ -72,7 +77,25 @@ func run(level *slog.LevelVar) error {
 		}
 	}
 
-	api := server.NewAPI(cfg)
+	// the janitor stops before the pool closes, whatever ends the run
+	janitorCtx, stopJanitor := context.WithCancel(ctx)
+	janitorDone := make(chan struct{})
+
+	go func() {
+		defer close(janitorDone)
+
+		janitor.Run(janitorCtx, pool, janitorInterval, time.Now)
+	}()
+
+	defer func() {
+		stopJanitor()
+		<-janitorDone
+	}()
+
+	api := server.NewAPI(cfg, server.Deps{
+		Sessions: session.NewStore(pool, time.Now),
+		Limiter:  ratelimit.New(pool, time.Now),
+	})
 	health := server.NewHealth(pool, func() server.PoolStats {
 		stat := pool.Stat()
 

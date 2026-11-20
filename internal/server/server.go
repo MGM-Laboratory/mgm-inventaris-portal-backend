@@ -9,6 +9,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 
 	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/config"
+	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/session"
 )
 
 // The limits on a connection. Without them a client that sends its request one byte at a time, or that keeps an idle connection
@@ -50,12 +51,17 @@ func newApp(trusted []netip.Prefix) *fiber.App {
 }
 
 // NewAPI returns the application of the API with its middleware and its routes.
-func NewAPI(cfg config.Config) *fiber.App {
+func NewAPI(cfg config.Config, deps Deps) *fiber.App {
 	app := newApp(cfg.TrustedProxies)
 
 	app.Use(RequestID(), NoStore(), AccessLog(), Recover())
+	app.Use(LoadSession(deps.Sessions, session.CookieName(cfg.SecureCookie)), OriginAndCSRF(cfg.PublicBaseURL))
 
 	app.Get("/api/config", configHandler(cfg))
+
+	app.Post("/api/session/guest", startGuestSession(cfg, deps))
+	app.Get("/api/session", RequireSession(), getSession())
+	app.Delete("/api/session", RequireSession(), deleteSession(cfg, deps))
 
 	return app
 }
