@@ -2374,13 +2374,9 @@ components:
       maxLength: 512
     Page:
       type: object
-      description: The shape of every list answer. A typed page below adds the type of its items.
-      required: [items, total]
+      description: The shape of every list answer. A typed page below adds the required `items` array with the type of its items.
+      required: [total]
       properties:
-        items:
-          type: array
-          items:
-            type: object
         total:
           type: integer
           minimum: 0
@@ -2660,6 +2656,7 @@ components:
       allOf:
         - $ref: "#/components/schemas/Page"
         - type: object
+          required: [items]
           properties:
             items:
               type: array
@@ -2699,6 +2696,7 @@ components:
       allOf:
         - $ref: "#/components/schemas/Page"
         - type: object
+          required: [items]
           properties:
             items:
               type: array
@@ -2727,6 +2725,7 @@ components:
       allOf:
         - $ref: "#/components/schemas/Page"
         - type: object
+          required: [items]
           properties:
             items:
               type: array
@@ -2745,30 +2744,16 @@ components:
             - Example category
         tone:
           $ref: "#/components/schemas/Tone"
-    ModelInput:
+    ModelInputBase:
       type: object
-      description: >-
-        A new model.
-        The body has exactly one of `categoryId` and `newCategory`.
-        A body with both or with neither fails the rule.
+      description: The fields that every new model has.
       required: [name, prefix]
-      oneOf:
-        - title: A model in an existing category
-          required: [categoryId]
-        - title: A model with a new category
-          required: [newCategory]
       properties:
         name:
           type: string
           minLength: 2
           maxLength: 100
           description: A name that no other model has, ignoring letter case. A repeat answers 409 with the code `duplicate`.
-        categoryId:
-          type: string
-          format: uuid
-          description: The identifier of an existing category.
-        newCategory:
-          $ref: "#/components/schemas/NewCategory"
         description:
           type: string
           maxLength: 500
@@ -2777,6 +2762,38 @@ components:
           type: string
           pattern: "^[A-Z0-9]{2,6}$"
           description: The part of the unit tags of this model, for example `VRQ` for `MGM-VRQ-001`. A prefix that another model uses, ignoring letter case, answers 409 with the code `duplicate`.
+    ModelInputInCategory:
+      description: A new model in an existing category. The body must not hold `newCategory`.
+      allOf:
+        - $ref: "#/components/schemas/ModelInputBase"
+        - type: object
+          required: [categoryId]
+          properties:
+            categoryId:
+              type: string
+              format: uuid
+              description: The identifier of an existing category.
+            newCategory:
+              not: {}
+    ModelInputNewCategory:
+      description: A new model with a new category. The body must not hold `categoryId`.
+      allOf:
+        - $ref: "#/components/schemas/ModelInputBase"
+        - type: object
+          required: [newCategory]
+          properties:
+            newCategory:
+              $ref: "#/components/schemas/NewCategory"
+            categoryId:
+              not: {}
+    ModelInput:
+      description: >-
+        A new model.
+        The body has exactly one of `categoryId` and `newCategory`.
+        A body with both or with neither fails the rule.
+      oneOf:
+        - $ref: "#/components/schemas/ModelInputInCategory"
+        - $ref: "#/components/schemas/ModelInputNewCategory"
     ModelPatch:
       type: object
       description: >-
@@ -2852,6 +2869,7 @@ components:
       allOf:
         - $ref: "#/components/schemas/Page"
         - type: object
+          required: [items]
           properties:
             items:
               type: array
@@ -2985,6 +3003,7 @@ components:
       allOf:
         - $ref: "#/components/schemas/Page"
         - type: object
+          required: [items]
           properties:
             items:
               type: array
@@ -3268,6 +3287,7 @@ components:
       allOf:
         - $ref: "#/components/schemas/Page"
         - type: object
+          required: [items]
           properties:
             items:
               type: array
@@ -3311,6 +3331,7 @@ components:
       allOf:
         - $ref: "#/components/schemas/Page"
         - type: object
+          required: [items]
           properties:
             items:
               type: array
