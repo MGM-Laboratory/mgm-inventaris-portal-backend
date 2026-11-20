@@ -2375,7 +2375,7 @@ components:
       maxLength: 512
     Page:
       type: object
-      description: The shape of every list answer. A typed page below adds the required `items` array with the type of its items.
+      description: The pagination fields of every list answer. A typed page below adds the required `items` array with the type of its items.
       required: [total]
       properties:
         total:
