@@ -2774,8 +2774,7 @@ components:
               type: string
               format: uuid
               description: The identifier of an existing category.
-            newCategory:
-              not: {}
+            newCategory: false
     ModelInputNewCategory:
       description: A new model with a new category. The body must not hold `categoryId`.
       allOf:
@@ -2785,8 +2784,7 @@ components:
           properties:
             newCategory:
               $ref: "#/components/schemas/NewCategory"
-            categoryId:
-              not: {}
+            categoryId: false
     ModelInput:
       description: >-
         A new model.
