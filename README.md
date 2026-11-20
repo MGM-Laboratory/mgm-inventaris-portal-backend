@@ -38,10 +38,11 @@ curl http://127.0.0.1:8081/readyz
 
 ### Create the first admin
 
-There is no sign up, so the first admin comes from a command with the settings of the service in the environment. The initial password comes from the variable `ADMIN_INITIAL_PASSWORD` or from one line of the standard input, and never from a flag, because a flag shows in the process list. The command prints the email and the id and refuses an email that exists. The initial password works for 24 hours. The first sign in of the admin gets a setup session of 15 minutes, which can only set a password of the admin's own and enroll TOTP.
+There is no sign up, so the first admin comes from a command with the settings of the service in the environment. The initial password comes from the variable `ADMIN_INITIAL_PASSWORD` or from one line of the standard input, and never from a flag, because a flag shows in the process list. The command prints the email and the id and refuses an email that exists. Until the admin sets an own password, every sign in gets only a setup session of 15 minutes, which can only set that password and enroll TOTP.
 
 ```sh
-printf '%s\n' 'example initial password' | go run ./cmd/api create-admin --email admin@example.org --name "Example Admin"
+read -rs ADMIN_INITIAL_PASSWORD && export ADMIN_INITIAL_PASSWORD
+go run ./cmd/api create-admin --email admin@example.org --name "Example Admin"
 ```
 
 ## Configuration
