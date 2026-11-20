@@ -6,7 +6,7 @@ Every error answer has the body described in [`api.md`](api.md). The field `code
 
 | Code | Status | Cause | What a client does |
 | --- | --- | --- | --- |
-| `bad_request` | 400 | The body is not valid JSON or a size limit is over | Fix the request |
+| `bad_request` | 400 | The body is not valid JSON or a size limit is over. A method that a route does not allow or a body over the size limit keeps its own status (405 or 413) with this code | Fix the request |
 | `unauthenticated` | 401 | The route needs a session and the request has none | Show the sign in page |
 | `session_expired` | 401 | The session reached its idle or absolute limit | Show the sign in page |
 | `invalid_credentials` | 401 | The email, the password or the code is wrong | Show one message for all of them, so the answer does not reveal which one is wrong |

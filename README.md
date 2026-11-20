@@ -2,6 +2,7 @@
 
 The backend of the LabMGM inventory portal, written in Go with PostgreSQL. The frontend lives in [`mgm-inventaris-portal-frontend`](https://github.com/MGM-Laboratory/mgm-inventaris-portal-frontend).
 
+[![CI](https://github.com/MGM-Laboratory/mgm-inventaris-portal-backend/actions/workflows/ci.yaml/badge.svg)](https://github.com/MGM-Laboratory/mgm-inventaris-portal-backend/actions/workflows/ci.yaml)
 [![Security](https://github.com/MGM-Laboratory/mgm-inventaris-portal-backend/actions/workflows/security.yaml/badge.svg)](https://github.com/MGM-Laboratory/mgm-inventaris-portal-backend/actions/workflows/security.yaml)
 [![Config lint](https://github.com/MGM-Laboratory/mgm-inventaris-portal-backend/actions/workflows/config.yaml/badge.svg)](https://github.com/MGM-Laboratory/mgm-inventaris-portal-backend/actions/workflows/config.yaml)
 [![Release Please](https://github.com/MGM-Laboratory/mgm-inventaris-portal-backend/actions/workflows/release-please.yaml/badge.svg)](https://github.com/MGM-Laboratory/mgm-inventaris-portal-backend/actions/workflows/release-please.yaml)
@@ -15,16 +16,45 @@ The backend of the LabMGM inventory portal, written in Go with PostgreSQL. The f
 
 ## Stack
 
-- Go and PostgreSQL.
+- Go 1.27, Fiber v3, pgx v5 and PostgreSQL 17, with golang-migrate for the schema.
 - CI, release automation and dependency updates on GitHub Actions, Release Please and Renovate. See [`docs/ci-cd.md`](docs/ci-cd.md).
 
 ## Quick start
 
-The service code is not written yet, so there is nothing to build or run. This section is filled in together with the first Go code.
+The service so far holds the settings, the database schema, the health routes and the route `GET /api/config`. The other routes of the contract are not built yet.
+
+1. Have a PostgreSQL 17 database and a role that owns it. The service applies its migrations at start.
+2. Copy `.env.example` to `.env` and set `DATABASE_URL` and `PUBLIC_BASE_URL`. The service reads the process environment and not the file, so load the file with your shell or your process manager.
+3. For a local run over plain http, also set `ENVIRONMENT=development` and `SECURE_COOKIE=false`. Production refuses both an http `PUBLIC_BASE_URL` and a `SECURE_COOKIE` of false.
+4. Start the service with `go run ./cmd/api`.
+
+The API listens on `HTTP_ADDR` and the health routes listen on `HEALTH_ADDR`. The health port is an internal port that the proxy does not route.
+
+```sh
+curl http://127.0.0.1:8080/api/config
+curl http://127.0.0.1:8081/healthz
+curl http://127.0.0.1:8081/readyz
+```
 
 ## Configuration
 
-The service code is not written yet, so it reads no settings. This section gets a table of every setting, with its default and its purpose, together with the first Go code.
+The service reads these environment variables at start. A bad value stops the start with a message that names the setting and never prints its value. `.env.example` lists every one of them.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `DATABASE_URL` | none, required | The PostgreSQL connection URL. It holds the password and is never logged |
+| `PUBLIC_BASE_URL` | none, required | The public address of the portal, with the scheme and the host only. Production needs `https`. The QR address of a unit is this value, `/aset/` and the tag |
+| `HTTP_ADDR` | `:8080` | The listen address of the API |
+| `HEALTH_ADDR` | `127.0.0.1:8081` | The listen address of `/healthz` and `/readyz`. It must differ from `HTTP_ADDR` |
+| `TRUSTED_PROXY` | empty | The IP address of the reverse proxy. The service reads `X-Real-IP` only from a request that comes from it |
+| `ENVIRONMENT` | `production` | `development` or `production` |
+| `SECURE_COOKIE` | `true` | The `Secure` flag of the session cookie. Only `development` may set it to `false` |
+| `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
+| `DB_MAX_CONNS` | `8` | The size of the pool of one copy, from 1 to 50 |
+| `MIGRATE_ON_START` | `true` | Apply the embedded migrations at start, under an advisory lock |
+| `MAX_ITEMS_PER_REQUEST` | `10` | The most items in one request, from 1 to 100 |
+| `MAX_DURATION_DAYS` | `30` | The longest loan in days, from 1 to 365 |
+| `MAX_OPEN_TICKETS` | `3` | The most open tickets for one email or one NIM or NIP, from 1 to 50 |
 
 ## Documentation
 
@@ -36,7 +66,9 @@ The service code is not written yet, so it reads no settings. This section gets 
 ## Project layout
 
 ```text
-docs/             CI/CD documentation
+cmd/api/          The entry point of the service
+internal/         The settings, the HTTP servers, the database pool, the migrations and the test helper
+docs/             Design pages and CI/CD documentation
 .github/          Workflows, the lint tool images, issue forms and the pull request template
 ```
 

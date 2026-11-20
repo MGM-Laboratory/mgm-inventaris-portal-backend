@@ -1,6 +1,6 @@
 # Architecture
 
-Status of this page. It describes the planned design of the service. The service code is not written yet, so every statement here is a plan until the code that does it is merged.
+Status of this page. It describes the design of the service. The code so far is the skeleton, which holds the settings, the database pool with the migrations, the error body, the request id, the route `GET /api/config` and the health routes. Every other statement here is a plan until the code that does it is merged.
 
 ## What the service does
 
@@ -27,25 +27,25 @@ The backend of the LabMGM inventory portal keeps the loan records of the lab. A 
 
 ## Package layout
 
+The folders below exist today.
+
 ```
-cmd/api            the entry point, also the admin commands (create an admin)
-internal/config    settings from the environment
-internal/server    router, middleware, error mapping
-internal/session   sessions, cookies, CSRF
-internal/auth      admin accounts, Argon2id, TOTP, recovery codes
-internal/catalog   categories, models, units, availability
-internal/ticket    tickets, numbers, status changes, handover, return
-internal/ratelimit counters in the database
-internal/janitor   scheduled jobs (expired sessions, counters, anonymization)
-internal/database  pool, migrations, test helpers
-internal/mail      sending interface, no provider yet
+cmd/api                       the entry point
+internal/config               settings from the environment
+internal/server               API app, health app, middleware, error mapping
+internal/database             pool and migrations
+internal/database/migrations  the embedded SQL files of golang-migrate
+internal/database/dbtest      a database for each test, skipped without DATABASE_URL
 ```
+
+These packages are planned and have no folder yet. `internal/session` (sessions, cookies, CSRF), `internal/auth` (admin accounts, Argon2id, TOTP, recovery codes), `internal/catalog` (categories, models, units, availability), `internal/ticket` (tickets, numbers, status changes, handover, return), `internal/ratelimit` (counters in the database), `internal/janitor` (scheduled jobs) and `internal/mail` (a sending interface with no provider yet). The admin commands, such as the one that creates an admin, join `cmd/api` with `internal/auth`.
 
 A package owns its tables and exposes plain functions. A handler never builds SQL. Other packages call the owner of a table and never read its tables.
 
 ## Security model
 
 - A session is a random 256 bit value in an `HttpOnly`, `Secure`, `SameSite=Lax` cookie. The database stores only its SHA-256 hash.
+- The `Secure` flag of the session cookie comes from the setting `ENVIRONMENT`, and production forces it. A development setup may turn it off with `SECURE_COOKIE=false`. The flag never comes from the request scheme or from `X-Forwarded-Proto`, so a client cannot weaken it.
 - A session has a kind, either guest or admin. A guest session holds the name, the NIM or NIP and the email that the guest typed. It is not an account.
 - An admin signs in with a local account, a password and a TOTP code or a recovery code. Passwords are hashed with Argon2id, and the memory cost and the sign in limits keep two copies of the service within the memory of the host.
 - Every rule of access is checked in the service. The frontend only hides screens.
