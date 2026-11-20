@@ -30,7 +30,6 @@ type Postgres struct {
 	db DB
 }
 
-// NewPostgres returns the repository on a pool.
 func NewPostgres(db DB) *Postgres {
 	return &Postgres{db: db}
 }
@@ -58,12 +57,10 @@ func (p *Postgres) ByEmail(ctx context.Context, email string) (Account, error) {
 	return p.one(ctx, `email = $1`, email)
 }
 
-// ByID returns the admin with the id.
 func (p *Postgres) ByID(ctx context.Context, id string) (Account, error) {
 	return p.one(ctx, `id = $1::uuid`, id)
 }
 
-// Insert stores a new admin and returns its id.
 func (p *Postgres) Insert(ctx context.Context, a Account) (string, error) {
 	var id string
 
@@ -215,7 +212,6 @@ func (p *Postgres) UseRecoveryCode(ctx context.Context, id, hash string, at time
 	return tag.RowsAffected() == 1, nil
 }
 
-// ReplaceRecoveryCodes deletes the codes of the admin and stores new hashes.
 func (p *Postgres) ReplaceRecoveryCodes(ctx context.Context, id string, hashes []string) error {
 	return p.inTx(ctx, func(tx pgx.Tx) error {
 		return replaceCodes(ctx, tx, id, hashes)

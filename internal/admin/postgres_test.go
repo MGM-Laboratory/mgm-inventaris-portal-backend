@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -36,7 +37,7 @@ func newDBFixture(t *testing.T) *dbFixture {
 	pool := dbtest.New(t)
 	clk := &clock{now: time.Date(2026, 11, 17, 3, 0, 0, 0, time.UTC)}
 
-	box, err := secretbox.New([]byte("0123456789abcdef0123456789abcdef"))
+	box, err := secretbox.New([]byte(strings.Repeat("0123456789abcdef", 2)))
 	if err != nil {
 		t.Fatalf("make the box %v", err)
 	}

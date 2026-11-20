@@ -143,7 +143,7 @@ func adminConfig() config.Config {
 func newAdminEnv(t *testing.T, mutate ...func(*config.Config)) *adminEnv {
 	t.Helper()
 
-	box, err := secretbox.New([]byte("0123456789abcdef0123456789abcdef"))
+	box, err := secretbox.New([]byte(strings.Repeat("0123456789abcdef", 2)))
 	if err != nil {
 		t.Fatalf("make the box %v", err)
 	}
