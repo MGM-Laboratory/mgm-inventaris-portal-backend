@@ -66,6 +66,11 @@ linters:
           # a test builds its requests and listeners with the background context on purpose
           - noctx
           - contextcheck
+      # the name of the error code invalid_credentials is not a credential
+      - path: ^internal/server/errormap\.go$
+        text: G101
+        linters:
+          - gosec
       # a test may print, and main decides how the program ends and what it prints
       - path: (_test\.go|^cmd/)
         linters:
