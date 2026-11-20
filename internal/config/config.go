@@ -149,7 +149,17 @@ func (c *Config) validatePublicBaseURL() error {
 		return errors.New("PUBLIC_BASE_URL must use https in production")
 	}
 
-	c.PublicBaseURL = base.Scheme + "://" + strings.ToLower(base.Host)
+	host := strings.ToLower(base.Host)
+
+	// a browser leaves the default port out of the Origin header, so the stored origin has to leave it out as well
+	if (base.Scheme == "https" && base.Port() == "443") || (base.Scheme == "http" && base.Port() == "80") {
+		host = strings.ToLower(base.Hostname())
+		if strings.Contains(host, ":") {
+			host = "[" + host + "]"
+		}
+	}
+
+	c.PublicBaseURL = base.Scheme + "://" + host
 
 	return nil
 }

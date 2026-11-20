@@ -43,10 +43,10 @@ The service reads these environment variables at start. A bad value stops the st
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `DATABASE_URL` | none, required | The PostgreSQL connection URL. It holds the password and is never logged |
-| `PUBLIC_BASE_URL` | none, required | The public address of the portal, with the scheme and the host only. Production needs `https`. The QR address of a unit is this value, `/aset/` and the tag |
+| `PUBLIC_BASE_URL` | none, required | The public address of the portal, with the scheme and the host only. Production needs `https`. A default port (443 for https, 80 for http) is dropped, because a browser leaves it out of the `Origin` header. The QR address of a unit is this value, `/aset/` and the tag |
 | `HTTP_ADDR` | `:8080` | The listen address of the API |
 | `HEALTH_ADDR` | `127.0.0.1:8081` | The listen address of `/healthz` and `/readyz`. It must differ from `HTTP_ADDR` |
-| `TRUSTED_PROXIES` | empty | A comma separated list of IP addresses and CIDR ranges of the reverse proxy. The service reads `X-Real-IP` only from a request whose peer is in the list. Empty trusts no header |
+| `TRUSTED_PROXIES` | empty | A comma separated list of IP addresses and CIDR ranges of the reverse proxy. The service reads `X-Real-IP` only from a request whose peer is in the list. Empty trusts no header, so behind a proxy every client counts as the proxy address, and production logs a warning at start |
 | `ENVIRONMENT` | `production` | `development` or `production` |
 | `SECURE_COOKIE` | `true` | The `Secure` flag of the session cookie. Only `development` may set it to `false` |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |

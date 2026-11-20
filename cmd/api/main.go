@@ -60,6 +60,10 @@ func run(level *slog.LevelVar) error {
 
 	slog.Info("starting", "version", version, "environment", cfg.Environment)
 
+	if cfg.Environment == config.EnvProduction && len(cfg.TrustedProxies) == 0 {
+		slog.Warn("TRUSTED_PROXIES is empty, so every client counts as the proxy address for the rate limits")
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 

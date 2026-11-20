@@ -111,6 +111,27 @@ func TestSecureCookie(t *testing.T) {
 	}
 }
 
+func TestPublicBaseURLLeavesOutTheDefaultPort(t *testing.T) {
+	tests := map[string]string{
+		"https://Portal.Example.org:443":  "https://portal.example.org",
+		"https://portal.example.org:8443": "https://portal.example.org:8443",
+		"https://portal.example.org":      "https://portal.example.org",
+		"https://[::1]:443":               "https://[::1]",
+	}
+
+	for in, want := range tests {
+		cfg, err := parse(with(map[string]string{"PUBLIC_BASE_URL": in}))
+		if err != nil || cfg.PublicBaseURL != want {
+			t.Fatalf("%s gave %q and %v, want %q", in, cfg.PublicBaseURL, err, want)
+		}
+	}
+
+	cfg, err := parse(with(map[string]string{"ENVIRONMENT": "development", "SECURE_COOKIE": "false", "PUBLIC_BASE_URL": "http://localhost:80"}))
+	if err != nil || cfg.PublicBaseURL != "http://localhost" {
+		t.Fatalf("an http base URL gave %q and %v", cfg.PublicBaseURL, err)
+	}
+}
+
 func TestBadValues(t *testing.T) {
 	tests := []struct {
 		name    string

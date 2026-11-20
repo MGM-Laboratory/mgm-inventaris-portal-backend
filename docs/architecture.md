@@ -32,6 +32,7 @@ The folders below exist today.
 ```
 cmd/api                       the entry point
 internal/config               settings from the environment
+internal/errchain             describes an error for a log line without request values
 internal/server               API app, health app, middleware, role guards, session routes, error mapping
 internal/session              sessions table, tokens, cookie
 internal/ratelimit            fixed window counters in the database
