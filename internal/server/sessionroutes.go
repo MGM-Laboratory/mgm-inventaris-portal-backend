@@ -70,8 +70,8 @@ func badBody() *Error {
 	return e
 }
 
-// startGuestSession is the route startGuestSession. The order of the steps matters. The rate limit counts every request, also one
-// with a bad body, and it runs before the body is read. The validation runs before the trap, so a bot that fills the hidden field
+// The order of the steps of the guest sign in matters. The rate limit counts every request, also one with a bad body, and it runs
+// before the body is read. The validation runs before the trap, so a bot that fills the hidden field
 // sees the same answers to a bad form as everybody else.
 func startGuestSession(cfg config.Config, deps Deps) fiber.Handler {
 	limits, _ := session.LimitsFor(session.KindGuest)
@@ -159,7 +159,7 @@ func getSession() fiber.Handler {
 	}
 }
 
-// deleteSession is the route deleteSession of the brief and endSession in openapi.yaml.
+// endSession is the operation of openapi.yaml.
 func deleteSession(cfg config.Config, deps Deps) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		ctx, cancel := context.WithTimeout(c.Context(), dbTimeout)

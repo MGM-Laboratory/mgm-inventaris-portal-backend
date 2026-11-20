@@ -161,7 +161,7 @@ func checkEmail(f textField) (string, *Detail) {
 		return "", d
 	}
 
-	if len(email) > emailMax {
+	if utf8.RuneCountInString(email) > emailMax {
 		return "", detail("email", detailTooLong, "Use at most 254 characters.")
 	}
 

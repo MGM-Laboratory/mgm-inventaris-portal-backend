@@ -10,7 +10,6 @@ import (
 // Kind is the kind of a session, as in the check constraint of the table.
 type Kind string
 
-// The kinds of a session.
 const (
 	KindGuest      Kind = "guest"
 	KindAdmin      Kind = "admin"

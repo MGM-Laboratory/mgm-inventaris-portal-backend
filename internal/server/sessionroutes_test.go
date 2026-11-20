@@ -310,6 +310,7 @@ func TestGuestFormRules(t *testing.T) {
 		{"email with an empty label", `{"name":"Abc","nimNip":"12345678","email":"a@..ub.ac.id"}`, "email", "invalid_format"},
 		{"email with no dot in the domain", `{"name":"Abc","nimNip":"12345678","email":"a@localhost"}`, "email", "invalid_format"},
 		{"email too long", `{"name":"Abc","nimNip":"12345678","email":"` + strings.Repeat("a", 250) + `@ub.ac.id"}`, "email", "too_long"},
+		{"email of 200 two byte characters counts as characters", `{"name":"Abc","nimNip":"12345678","email":"` + strings.Repeat("é", 200) + `@ub.ac.id"}`, "", ""},
 		{"email is missing", `{"name":"Abc","nimNip":"12345678"}`, "email", "required"},
 	}
 
