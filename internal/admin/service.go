@@ -96,9 +96,10 @@ func (s *Service) SignIn(ctx context.Context, in SignInInput) (SignInResult, err
 		}
 	}
 
-	expired := acct.PasswordExpiresAt != nil && !s.now().Before(*acct.PasswordExpiresAt)
+	// the initial password stays in force until the admin sets a new one, so it never gives a full session, with a TOTP code or without
+	initial := acct.PasswordExpiresAt != nil
 
-	return SignInResult{Account: acct, Setup: !acct.TOTPEnabled() || expired, UsedRecoveryCode: usedRecovery}, nil
+	return SignInResult{Account: acct, Setup: !acct.TOTPEnabled() || initial, UsedRecoveryCode: usedRecovery}, nil
 }
 
 func (s *Service) load(ctx context.Context, id string) (Account, error) {

@@ -51,7 +51,7 @@ type fixture struct {
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
 
-	box, err := secretbox.New([]byte("0123456789abcdef0123456789abcdef"))
+	box, err := secretbox.New([]byte(strings.Repeat("0123456789abcdef", 2)))
 	if err != nil {
 		t.Fatalf("make the box %v", err)
 	}
@@ -247,22 +247,22 @@ func TestSignInRefusesEveryWrongValueTheSameWay(t *testing.T) {
 	}
 }
 
-func TestSignInWithAnExpiredInitialPasswordGivesASetupSession(t *testing.T) {
+func TestSignInWithTheInitialPasswordAlwaysGivesASetupSession(t *testing.T) {
 	f := newFixture(t)
 	e := f.enroll(t, "admin@example.org")
 
 	f.clock.advance(admin.InitialPasswordLifetime - time.Second)
 
 	got, err := f.svc.SignIn(context.Background(), admin.SignInInput{Email: "admin@example.org", Password: initialPassword, TOTPCode: f.codeNoAdvance(e)})
-	if err != nil || got.Setup {
-		t.Fatalf("a password that has a second left gave %+v and %v", got, err)
+	if err != nil || !got.Setup {
+		t.Fatalf("an initial password that has a second left gave %+v and %v", got, err)
 	}
 
 	f.clock.advance(time.Second)
 
 	got, err = f.svc.SignIn(context.Background(), admin.SignInInput{Email: "admin@example.org", Password: initialPassword, TOTPCode: f.code(e)})
 	if err != nil || !got.Setup {
-		t.Fatalf("an expired password gave %+v and %v", got, err)
+		t.Fatalf("an expired initial password gave %+v and %v", got, err)
 	}
 }
 
