@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -45,6 +47,10 @@ func TestDefaults(t *testing.T) {
 		t.Fatalf("unexpected limits %d %d %d", cfg.MaxItemsPerRequest, cfg.MaxDurationDays, cfg.MaxOpenTickets)
 	}
 
+	if cfg.GuestSigninPerHour != 60 {
+		t.Fatalf("the guest sign in limit is %d", cfg.GuestSigninPerHour)
+	}
+
 	if len(cfg.TrustedProxies) != 0 || cfg.DatabaseURL.Reveal() != sampleDatabaseURL {
 		t.Fatal("unexpected proxies or database URL")
 	}
@@ -66,6 +72,7 @@ func TestOverrides(t *testing.T) {
 		"MAX_ITEMS_PER_REQUEST": "5",
 		"MAX_DURATION_DAYS":     "14",
 		"MAX_OPEN_TICKETS":      "2",
+		"GUEST_SIGNIN_PER_HOUR": "5",
 	}))
 	if err != nil {
 		t.Fatalf("parse failed %v", err)
@@ -85,7 +92,7 @@ func TestOverrides(t *testing.T) {
 		t.Fatalf("unexpected values %+v", cfg)
 	}
 
-	if cfg.MaxItemsPerRequest != 5 || cfg.MaxDurationDays != 14 || cfg.MaxOpenTickets != 2 {
+	if cfg.MaxItemsPerRequest != 5 || cfg.MaxDurationDays != 14 || cfg.MaxOpenTickets != 2 || cfg.GuestSigninPerHour != 5 {
 		t.Fatal("limits were not read")
 	}
 }
@@ -101,6 +108,27 @@ func TestSecureCookie(t *testing.T) {
 	}))
 	if err != nil || cfg.SecureCookie {
 		t.Fatalf("development may turn the flag off, got %v and %v", cfg.SecureCookie, err)
+	}
+}
+
+func TestPublicBaseURLLeavesOutTheDefaultPort(t *testing.T) {
+	tests := map[string]string{
+		"https://Portal.Example.org:443":  "https://portal.example.org",
+		"https://portal.example.org:8443": "https://portal.example.org:8443",
+		"https://portal.example.org":      "https://portal.example.org",
+		"https://[::1]:443":               "https://[::1]",
+	}
+
+	for in, want := range tests {
+		cfg, err := parse(with(map[string]string{"PUBLIC_BASE_URL": in}))
+		if err != nil || cfg.PublicBaseURL != want {
+			t.Fatalf("%s gave %q and %v, want %q", in, cfg.PublicBaseURL, err, want)
+		}
+	}
+
+	cfg, err := parse(with(map[string]string{"ENVIRONMENT": "development", "SECURE_COOKIE": "false", "PUBLIC_BASE_URL": "http://localhost:80"}))
+	if err != nil || cfg.PublicBaseURL != "http://localhost" {
+		t.Fatalf("an http base URL gave %q and %v", cfg.PublicBaseURL, err)
 	}
 }
 
@@ -140,6 +168,9 @@ func TestBadValues(t *testing.T) {
 		{"not a bool", with(map[string]string{"MIGRATE_ON_START": "maybe"}), "MIGRATE_ON_START"},
 		{"items too high", with(map[string]string{"MAX_ITEMS_PER_REQUEST": "101"}), "MAX_ITEMS_PER_REQUEST"},
 		{"days too low", with(map[string]string{"MAX_DURATION_DAYS": "0"}), "MAX_DURATION_DAYS"},
+		{"sign in limit too low", with(map[string]string{"GUEST_SIGNIN_PER_HOUR": "0"}), "GUEST_SIGNIN_PER_HOUR"},
+		{"sign in limit too high", with(map[string]string{"GUEST_SIGNIN_PER_HOUR": "100001"}), "GUEST_SIGNIN_PER_HOUR"},
+		{"sign in limit not a number", with(map[string]string{"GUEST_SIGNIN_PER_HOUR": "many"}), "GUEST_SIGNIN_PER_HOUR"},
 	}
 
 	for _, tc := range tests {
@@ -196,5 +227,33 @@ func TestSecretIsRedacted(t *testing.T) {
 
 	if cfg.DatabaseURL.String() != "[redacted]" {
 		t.Fatalf("String is %q", cfg.DatabaseURL.String())
+	}
+}
+
+// TestEverySettingIsDocumented keeps .env.example and the table of the README in step with the settings of the loader.
+func TestEverySettingIsDocumented(t *testing.T) {
+	example, err := os.ReadFile("../../.env.example")
+	if err != nil {
+		t.Fatalf("read .env.example %v", err)
+	}
+
+	readme, err := os.ReadFile("../../README.md")
+	if err != nil {
+		t.Fatalf("read README.md %v", err)
+	}
+
+	for field := range reflect.TypeFor[Config]().Fields() {
+		name, _, _ := strings.Cut(field.Tag.Get("env"), ",")
+		if name == "" || name == "-" {
+			continue
+		}
+
+		if !strings.Contains(string(example), "\n"+name+"=") && !strings.HasPrefix(string(example), name+"=") {
+			t.Fatalf(".env.example has no line for %s", name)
+		}
+
+		if !strings.Contains(string(readme), "| `"+name+"` |") {
+			t.Fatalf("the Configuration table of the README has no row for %s", name)
+		}
 	}
 }

@@ -7,6 +7,8 @@ import (
 	"strconv"
 
 	"github.com/gofiber/fiber/v3"
+
+	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/errchain"
 )
 
 // Code is a stable error code that a client branches on. The list is the same as in docs/errors.md.
@@ -137,7 +139,7 @@ func logFailure(c fiber.Ctx, err error, status int) {
 	if errors.As(err, &apiErr) {
 		attrs = append(attrs, "code", apiErr.Code)
 	} else {
-		attrs = append(attrs, "error_chain", errorChain(err))
+		attrs = append(attrs, "error_chain", errchain.Chain(err))
 	}
 
 	slog.Error("a route failed", attrs...)
