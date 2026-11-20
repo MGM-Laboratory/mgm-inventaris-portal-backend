@@ -28,6 +28,7 @@ const (
 	maxItems       = 100
 	maxDurationCap = 365
 	maxOpenCap     = 50
+	maxSigninCap   = 100000
 )
 
 // Config holds the settings of the service. The names of the variables are listed in .env.example.
@@ -57,6 +58,9 @@ type Config struct {
 	MaxItemsPerRequest int `env:"MAX_ITEMS_PER_REQUEST" envDefault:"10"`
 	MaxDurationDays    int `env:"MAX_DURATION_DAYS" envDefault:"30"`
 	MaxOpenTickets     int `env:"MAX_OPEN_TICKETS" envDefault:"3"`
+
+	// GuestSigninPerHour is the most guest sign in requests that one client address may send in an hour.
+	GuestSigninPerHour int `env:"GUEST_SIGNIN_PER_HOUR" envDefault:"60"`
 }
 
 // Load reads the settings from the environment of the process and refuses a value that the service cannot run with.
@@ -145,7 +149,17 @@ func (c *Config) validatePublicBaseURL() error {
 		return errors.New("PUBLIC_BASE_URL must use https in production")
 	}
 
-	c.PublicBaseURL = base.Scheme + "://" + strings.ToLower(base.Host)
+	host := strings.ToLower(base.Host)
+
+	// a browser leaves the default port out of the Origin header, so the stored origin has to leave it out as well
+	if (base.Scheme == "https" && base.Port() == "443") || (base.Scheme == "http" && base.Port() == "80") {
+		host = strings.ToLower(base.Hostname())
+		if strings.Contains(host, ":") {
+			host = "[" + host + "]"
+		}
+	}
+
+	c.PublicBaseURL = base.Scheme + "://" + host
 
 	return nil
 }
@@ -161,6 +175,10 @@ func (c *Config) validateLimits() error {
 
 	if c.MaxOpenTickets < 1 || c.MaxOpenTickets > maxOpenCap {
 		return fmt.Errorf("MAX_OPEN_TICKETS is %d and must be between 1 and %d", c.MaxOpenTickets, maxOpenCap)
+	}
+
+	if c.GuestSigninPerHour < 1 || c.GuestSigninPerHour > maxSigninCap {
+		return fmt.Errorf("GUEST_SIGNIN_PER_HOUR is %d and must be between 1 and %d", c.GuestSigninPerHour, maxSigninCap)
 	}
 
 	return nil

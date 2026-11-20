@@ -21,7 +21,7 @@ The backend of the LabMGM inventory portal, written in Go with PostgreSQL. The f
 
 ## Quick start
 
-The service so far holds the settings, the database schema, the health routes and the route `GET /api/config`. The other routes of the contract are not built yet.
+The service so far holds the settings, the database schema, the health routes, the route `GET /api/config` and the routes of the guest session (`POST /api/session/guest`, `GET /api/session` and `DELETE /api/session`). The other routes of the contract are not built yet.
 
 1. Have a PostgreSQL 17 database and a role that owns it. The service applies its migrations at start.
 2. Copy `.env.example` to `.env` and set `DATABASE_URL` and `PUBLIC_BASE_URL`. The service reads the process environment and not the file, so load the file with your shell or your process manager.
@@ -43,10 +43,10 @@ The service reads these environment variables at start. A bad value stops the st
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `DATABASE_URL` | none, required | The PostgreSQL connection URL. It holds the password and is never logged |
-| `PUBLIC_BASE_URL` | none, required | The public address of the portal, with the scheme and the host only. Production needs `https`. The QR address of a unit is this value, `/aset/` and the tag |
+| `PUBLIC_BASE_URL` | none, required | The public address of the portal, with the scheme and the host only. Production needs `https`. A default port (443 for https, 80 for http) is dropped, because a browser leaves it out of the `Origin` header. The QR address of a unit is this value, `/aset/` and the tag |
 | `HTTP_ADDR` | `:8080` | The listen address of the API |
 | `HEALTH_ADDR` | `127.0.0.1:8081` | The listen address of `/healthz` and `/readyz`. It must differ from `HTTP_ADDR` |
-| `TRUSTED_PROXIES` | empty | A comma separated list of IP addresses and CIDR ranges of the reverse proxy. The service reads `X-Real-IP` only from a request whose peer is in the list. Empty trusts no header |
+| `TRUSTED_PROXIES` | empty | A comma separated list of IP addresses and CIDR ranges of the reverse proxy. The service reads `X-Real-IP` only from a request whose peer is in the list. Empty trusts no header, so behind a proxy every client counts as the proxy address, and production logs a warning at start |
 | `ENVIRONMENT` | `production` | `development` or `production` |
 | `SECURE_COOKIE` | `true` | The `Secure` flag of the session cookie. Only `development` may set it to `false` |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
@@ -55,6 +55,7 @@ The service reads these environment variables at start. A bad value stops the st
 | `MAX_ITEMS_PER_REQUEST` | `10` | The most items in one request, from 1 to 100 |
 | `MAX_DURATION_DAYS` | `30` | The longest loan in days, from 1 to 365 |
 | `MAX_OPEN_TICKETS` | `3` | The most open tickets for one email or one NIM or NIP, from 1 to 50 |
+| `GUEST_SIGNIN_PER_HOUR` | `60` | The most guest sign in requests that one client address may send in an hour, from 1 to 100000. Every request counts, and an IPv6 address counts as its `/64` prefix |
 
 ## Documentation
 
@@ -67,7 +68,7 @@ The service reads these environment variables at start. A bad value stops the st
 
 ```text
 cmd/api/          The entry point of the service
-internal/         The settings, the HTTP servers, the database pool, the migrations and the test helper
+internal/         The settings, the HTTP servers, the sessions, the rate limits, the janitor, the database pool, the migrations and the test helper
 docs/             Design pages and CI/CD documentation
 .github/          Workflows, the lint tool images, issue forms and the pull request template
 ```
