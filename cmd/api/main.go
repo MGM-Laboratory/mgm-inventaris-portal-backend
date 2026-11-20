@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -21,8 +22,12 @@ import (
 // version is set at build time with -ldflags.
 var version = "dev"
 
-// shutdownTimeout is how long the servers let running requests finish after a stop signal.
-const shutdownTimeout = 15 * time.Second
+const (
+	// drainGrace is how long /readyz answers 503 before the servers stop, so the proxy and the rolling update see it. The two servers
+	// then stop together under shutdownTimeout, so a stop signal takes drainGrace plus shutdownTimeout at most.
+	drainGrace      = 3 * time.Second
+	shutdownTimeout = 15 * time.Second
+)
 
 func main() {
 	level := new(slog.LevelVar)
@@ -68,12 +73,16 @@ func run(level *slog.LevelVar) error {
 	}
 
 	api := server.NewAPI(cfg)
-	health := server.NewHealth(pool)
+	health := server.NewHealth(pool, func() server.PoolStats {
+		stat := pool.Stat()
+
+		return server.PoolStats{Acquired: stat.AcquiredConns(), Max: stat.MaxConns()}
+	})
 
 	serverErr := make(chan error, 2)
 
 	go func() { serverErr <- listen(api, cfg.HTTPAddr) }()
-	go func() { serverErr <- listen(health, cfg.HealthAddr) }()
+	go func() { serverErr <- listen(health.App(), cfg.HealthAddr) }()
 
 	select {
 	case err := <-serverErr:
@@ -85,20 +94,40 @@ func run(level *slog.LevelVar) error {
 	// from here a second signal gets its default action, so an operator can stop the process without waiting for the timeout
 	stop()
 
-	return errors.Join(
-		wrap("stop the api server", api.ShutdownWithTimeout(shutdownTimeout)),
-		wrap("stop the health server", health.ShutdownWithTimeout(shutdownTimeout)),
+	health.Drain()
+	time.Sleep(drainGrace)
+
+	return shutdown(api, health.App())
+}
+
+// shutdown stops both servers together. A server that never ran, because the signal came first, is not an error.
+func shutdown(api, health *fiber.App) error {
+	var (
+		wg   sync.WaitGroup
+		errs [2]error
 	)
+
+	for i, target := range []struct {
+		name string
+		app  *fiber.App
+	}{{"api", api}, {"health", health}} {
+		wg.Go(func() {
+			err := target.app.ShutdownWithTimeout(shutdownTimeout)
+			if err != nil && !errors.Is(err, fiber.ErrNotRunning) {
+				errs[i] = fmt.Errorf("stop the %s server %w", target.name, err)
+			}
+		})
+	}
+
+	wg.Wait()
+
+	return errors.Join(errs[:]...)
 }
 
 func listen(app *fiber.App, addr string) error {
-	return app.Listen(addr, fiber.ListenConfig{DisableStartupMessage: true})
-}
-
-func wrap(what string, err error) error {
-	if err == nil {
-		return nil
+	if err := app.Listen(addr, fiber.ListenConfig{DisableStartupMessage: true}); err != nil {
+		return err
 	}
 
-	return fmt.Errorf("%s %w", what, err)
+	return errors.New("the listener returned with no error")
 }

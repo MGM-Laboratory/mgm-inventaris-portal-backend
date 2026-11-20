@@ -1,16 +1,18 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"regexp"
+	"runtime/debug"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 )
 
-// requestIDHeader carries the request id in and out.
 const requestIDHeader = "X-Request-Id"
 
 type requestIDKey struct{}
@@ -39,13 +41,19 @@ func requestID(c fiber.Ctx) string {
 	return id
 }
 
-// routePath is the pattern of the route that ran and never the path of the request, because a path can hold a ticket number.
-func routePath(c fiber.Ctx) string {
-	if route := c.Route(); route != nil {
-		return route.Path
+// unmatched labels a request that no route answered.
+const unmatched = "unmatched"
+
+// routeLabel is the pattern of the route that ran, and never the path of the request, because a path can hold a ticket number. The
+// router answers an unknown path with 404 and a known path with another method with 405. Both are labeled unmatched, because the
+// route that fiber reports for them is the middleware.
+func routeLabel(c fiber.Ctx, err error) string {
+	var fiberErr *fiber.Error
+	if errors.As(err, &fiberErr) && (fiberErr.Code == http.StatusNotFound || fiberErr.Code == http.StatusMethodNotAllowed) {
+		return unmatched
 	}
 
-	return "unmatched"
+	return c.Route().Path
 }
 
 // NoStore marks every answer, errors included, as not cacheable.
@@ -62,8 +70,8 @@ func Recover() fiber.Handler {
 	return func(c fiber.Ctx) (err error) {
 		defer func() {
 			if r := recover(); r != nil {
-				slog.Error("a route panicked", "request_id", requestID(c), "method", c.Method(), "path", routePath(c),
-					"panic_type", fmt.Sprintf("%T", r))
+				slog.Error("a route panicked", "request_id", requestID(c), "method", c.Method(), "path", routeLabel(c, nil),
+					"panic_type", fmt.Sprintf("%T", r), "panic_value", fmt.Sprint(r), "stack", string(debug.Stack()))
 
 				err = NewError(CodeInternal)
 			}
@@ -84,7 +92,7 @@ func AccessLog() fiber.Handler {
 			_, status = resolve(err)
 		}
 
-		slog.Info("request", "request_id", requestID(c), "method", c.Method(), "path", routePath(c), "status", status,
+		slog.Info("request", "request_id", requestID(c), "method", c.Method(), "path", routeLabel(c, err), "status", status,
 			"duration_ms", time.Since(start).Milliseconds())
 
 		return err

@@ -3,8 +3,7 @@
 package server
 
 import (
-	"context"
-	"log/slog"
+	"net/netip"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -25,15 +24,7 @@ const (
 // minDurationDays is the shortest loan. The contract shows it in the limits, and it is not a setting.
 const minDurationDays = 1
 
-// readyTimeout is how long the readiness route waits for the database.
-const readyTimeout = 2 * time.Second
-
-// Pinger is the part of the database pool that the readiness route needs.
-type Pinger interface {
-	Ping(ctx context.Context) error
-}
-
-func newApp(trustedProxy string) *fiber.App {
+func newApp(trusted []netip.Prefix) *fiber.App {
 	cfg := fiber.Config{
 		ReadTimeout:  readTimeout,
 		WriteTimeout: writeTimeout,
@@ -42,10 +33,15 @@ func newApp(trustedProxy string) *fiber.App {
 		ErrorHandler: ErrorHandler,
 	}
 
-	// X-Real-IP counts only when the request comes from the proxy of the settings, as docs/api.md says
-	if trustedProxy != "" {
+	// X-Real-IP counts only when the peer is in the list of the settings, as docs/api.md says
+	if len(trusted) > 0 {
+		proxies := make([]string, 0, len(trusted))
+		for _, prefix := range trusted {
+			proxies = append(proxies, prefix.String())
+		}
+
 		cfg.TrustProxy = true
-		cfg.TrustProxyConfig = fiber.TrustProxyConfig{Proxies: []string{trustedProxy}}
+		cfg.TrustProxyConfig = fiber.TrustProxyConfig{Proxies: proxies}
 		cfg.ProxyHeader = "X-Real-IP"
 		cfg.EnableIPValidation = true
 	}
@@ -55,7 +51,7 @@ func newApp(trustedProxy string) *fiber.App {
 
 // NewAPI returns the application of the API with its middleware and its routes.
 func NewAPI(cfg config.Config) *fiber.App {
-	app := newApp(cfg.TrustedProxy)
+	app := newApp(cfg.TrustedProxies)
 
 	app.Use(RequestID(), NoStore(), AccessLog(), Recover())
 
@@ -90,34 +86,4 @@ func configHandler(cfg config.Config) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		return c.JSON(body)
 	}
-}
-
-type health struct {
-	Status string `json:"status"`
-}
-
-// NewHealth returns the application of the health routes. The route /healthz reads nothing and the route /readyz pings the database.
-func NewHealth(db Pinger) *fiber.App {
-	app := newApp("")
-
-	app.Use(RequestID(), NoStore(), Recover())
-
-	app.Get("/healthz", func(c fiber.Ctx) error {
-		return c.JSON(health{Status: "ok"})
-	})
-
-	app.Get("/readyz", func(c fiber.Ctx) error {
-		ctx, cancel := context.WithTimeout(c.Context(), readyTimeout)
-		defer cancel()
-
-		if err := db.Ping(ctx); err != nil {
-			slog.Warn("the database check failed", "request_id", requestID(c), "error", err)
-
-			return c.Status(fiber.StatusServiceUnavailable).JSON(health{Status: "unavailable"})
-		}
-
-		return c.JSON(health{Status: "ready"})
-	})
-
-	return app
 }

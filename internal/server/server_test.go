@@ -1,15 +1,21 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
@@ -305,7 +311,7 @@ func TestHealthRoutes(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			res, body := do(t, NewHealth(tc.pinger), http.MethodGet, tc.path, nil)
+			res, body := do(t, NewHealth(tc.pinger, nil).App(), http.MethodGet, tc.path, nil)
 
 			if res.StatusCode != tc.status || string(body) != tc.body {
 				t.Fatalf("answer is %d %s, want %d %s", res.StatusCode, body, tc.status, tc.body)
@@ -319,8 +325,220 @@ func TestHealthRoutes(t *testing.T) {
 }
 
 func TestHealthAppHasNoAPIRoute(t *testing.T) {
-	res, body := do(t, NewHealth(fakePinger{}), http.MethodGet, "/api/config", nil)
+	res, body := do(t, NewHealth(fakePinger{}, nil).App(), http.MethodGet, "/api/config", nil)
 	if res.StatusCode != http.StatusNotFound || decodeError(t, body).Error.Code != "not_found" {
 		t.Fatalf("the health app answered %d %s", res.StatusCode, body)
+	}
+}
+
+// countingPinger counts the pings and answers with the error that the test sets.
+type countingPinger struct {
+	mu    sync.Mutex
+	calls int
+	err   error
+}
+
+func (p *countingPinger) Ping(context.Context) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.calls++
+
+	return p.err
+}
+
+func (p *countingPinger) set(err error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.err = err
+}
+
+func (p *countingPinger) count() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	return p.calls
+}
+
+type fakeClock struct{ now time.Time }
+
+func (c *fakeClock) Now() time.Time { return c.now }
+
+func readyz(t *testing.T, h *Health) (int, string) {
+	t.Helper()
+
+	res, body := do(t, h.App(), http.MethodGet, "/readyz", nil)
+
+	return res.StatusCode, string(body)
+}
+
+func TestReadyzReusesTheAnswerForAShortTime(t *testing.T) {
+	pinger := &countingPinger{}
+	clock := &fakeClock{now: time.Unix(1000, 0)}
+	h := newHealth(pinger, nil, 2*time.Second, clock.Now)
+
+	for range 5 {
+		if code, body := readyz(t, h); code != 200 || body != `{"status":"ready"}` {
+			t.Fatalf("answer is %d %s", code, body)
+		}
+	}
+
+	if pinger.count() != 1 {
+		t.Fatalf("five probes made %d pings, want 1", pinger.count())
+	}
+
+	// the database fails, but the cached answer still holds until the time is up
+	pinger.set(errors.New("connection refused"))
+
+	if code, _ := readyz(t, h); code != 200 || pinger.count() != 1 {
+		t.Fatalf("a probe inside the time made a ping, calls %d, status %d", pinger.count(), code)
+	}
+
+	clock.now = clock.now.Add(3 * time.Second)
+
+	if code, body := readyz(t, h); code != 503 || body != `{"status":"unavailable"}` {
+		t.Fatalf("answer after the time is %d %s", code, body)
+	}
+
+	if pinger.count() != 2 {
+		t.Fatalf("calls are %d, want 2", pinger.count())
+	}
+}
+
+func TestReadyzSaysReadyWhileThePoolIsSaturated(t *testing.T) {
+	pinger := &countingPinger{err: context.DeadlineExceeded}
+	clock := &fakeClock{now: time.Unix(1000, 0)}
+
+	saturated := PoolStats{Acquired: 8, Max: 8}
+	stats := func() PoolStats { return saturated }
+	h := newHealth(pinger, stats, time.Second, clock.Now)
+
+	if code, body := readyz(t, h); code != 200 || body != `{"status":"ready"}` {
+		t.Fatalf("a busy pool answered %d %s", code, body)
+	}
+
+	// the same failure with free connections is a database that is down
+	saturated = PoolStats{Acquired: 3, Max: 8}
+	clock.now = clock.now.Add(2 * time.Second)
+
+	if code, body := readyz(t, h); code != 503 || body != `{"status":"unavailable"}` {
+		t.Fatalf("a down database answered %d %s", code, body)
+	}
+}
+
+func TestReadyzAnswers503WhileDraining(t *testing.T) {
+	h := newHealth(&countingPinger{}, nil, time.Second, time.Now)
+
+	if code, _ := readyz(t, h); code != 200 {
+		t.Fatalf("status before the drain is %d", code)
+	}
+
+	h.Drain()
+
+	if code, body := readyz(t, h); code != 503 || body != `{"status":"unavailable"}` {
+		t.Fatalf("answer while draining is %d %s", code, body)
+	}
+
+	if res, _ := do(t, h.App(), http.MethodGet, "/healthz", nil); res.StatusCode != 200 {
+		t.Fatalf("healthz while draining is %d", res.StatusCode)
+	}
+}
+
+// captureLog sends the default logger to a buffer for the test.
+func captureLog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+
+	var buf bytes.Buffer
+
+	previous := slog.Default()
+
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	return &buf
+}
+
+func TestPanicIsLoggedWithItsStackAndNotAnswered(t *testing.T) {
+	logs := captureLog(t)
+	app := NewAPI(testConfig())
+
+	app.Get("/test/panic", func(fiber.Ctx) error {
+		panic("boom value")
+	})
+
+	res, body := do(t, app, http.MethodGet, "/test/panic", map[string]string{
+		"Cookie": "__Host-mgm_session=sample-session-value", "Authorization": "Bearer sample-token-value",
+	})
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("status is %d", res.StatusCode)
+	}
+
+	for _, stack := range []string{"goroutine", "runtime/debug", ".go:", "boom value", "panic"} {
+		if strings.Contains(string(body), stack) {
+			t.Fatalf("the answer holds %q, %s", stack, body)
+		}
+	}
+
+	logged := logs.String()
+
+	for _, want := range []string{`"panic_value":"boom value"`, `"panic_type":"string"`, "goroutine", "server_test.go"} {
+		if !strings.Contains(logged, want) {
+			t.Fatalf("the log has no %q, %s", want, logged)
+		}
+	}
+
+	for _, leak := range []string{"sample-session-value", "sample-token-value"} {
+		if strings.Contains(logged, leak) {
+			t.Fatalf("the log holds %q", leak)
+		}
+	}
+}
+
+func TestInternalErrorIsLoggedAsAChain(t *testing.T) {
+	logs := captureLog(t)
+	app := NewAPI(testConfig())
+
+	app.Get("/test/chain", func(fiber.Ctx) error {
+		_, err := strconv.Atoi("secret-input-value")
+
+		return fmt.Errorf("load the ticket %w", err)
+	})
+
+	res, body := do(t, app, http.MethodGet, "/test/chain", nil)
+	if res.StatusCode != http.StatusInternalServerError || strings.Contains(string(body), "load the ticket") {
+		t.Fatalf("answer is %d %s", res.StatusCode, body)
+	}
+
+	logged := logs.String()
+
+	for _, want := range []string{"*fmt.wrapError: load the ticket", "*strconv.NumError", "*errors.errorString"} {
+		if !strings.Contains(logged, want) {
+			t.Fatalf("the chain has no %q, %s", want, logged)
+		}
+	}
+
+	// the text of a library error can hold the value of the request, so only its type is logged
+	if strings.Contains(logged, "secret-input-value") {
+		t.Fatalf("the log holds a request value, %s", logged)
+	}
+}
+
+func TestAccessLogLabelsTheRoute(t *testing.T) {
+	logs := captureLog(t)
+	app := NewAPI(testConfig())
+
+	do(t, app, http.MethodGet, "/api/config", nil)
+	do(t, app, http.MethodGet, "/api/tickets/MGM-2611-0001-AAAA", nil)
+	do(t, app, http.MethodPost, "/api/config", nil)
+
+	logged := logs.String()
+
+	if strings.Contains(logged, "MGM-2611-0001-AAAA") {
+		t.Fatalf("the log holds the raw path, %s", logged)
+	}
+
+	if strings.Count(logged, `"path":"/api/config"`) != 1 || strings.Count(logged, `"path":"unmatched"`) != 2 {
+		t.Fatalf("the labels are wrong, %s", logged)
 	}
 }

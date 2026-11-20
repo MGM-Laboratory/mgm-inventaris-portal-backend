@@ -2,7 +2,6 @@ package server
 
 import (
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -66,7 +65,6 @@ var catalog = map[Code]struct {
 	CodeUnavailable:        {http.StatusServiceUnavailable, "The service cannot reach its database. Try again later."},
 }
 
-// Detail is the entry of one field in the details of an error.
 type Detail struct {
 	Field       string `json:"field"`
 	Code        string `json:"code"`
@@ -83,7 +81,6 @@ type Error struct {
 	RetryAfter int
 }
 
-// NewError returns the error of a code with its default message.
 func NewError(code Code, details ...Detail) *Error {
 	return &Error{Code: code, Message: catalog[code].message, Details: details}
 }
@@ -92,7 +89,6 @@ func (e *Error) Error() string {
 	return string(e.Code)
 }
 
-// Status is the HTTP status of the code.
 func (e *Error) Status() int {
 	if entry, ok := catalog[e.Code]; ok {
 		return entry.status
@@ -134,14 +130,25 @@ func resolve(err error) (*Error, int) {
 	return NewError(CodeInternal), http.StatusInternalServerError
 }
 
+func logFailure(c fiber.Ctx, err error, status int) {
+	attrs := []any{"request_id", requestID(c), "method", c.Method(), "path", routeLabel(c, err), "status", status}
+
+	var apiErr *Error
+	if errors.As(err, &apiErr) {
+		attrs = append(attrs, "code", apiErr.Code)
+	} else {
+		attrs = append(attrs, "error_chain", errorChain(err))
+	}
+
+	slog.Error("a route failed", attrs...)
+}
+
 // ErrorHandler writes the error body of the contract for every error of a route, a missing route and a panic.
 func ErrorHandler(c fiber.Ctx, err error) error {
 	apiErr, status := resolve(err)
 
 	if status >= http.StatusInternalServerError {
-		// the type of the error says what failed, and its text can hold a row of the database or a value of the request
-		slog.Error("a route failed", "request_id", requestID(c), "method", c.Method(), "path", routePath(c), "status", status,
-			"error_type", fmt.Sprintf("%T", err))
+		logFailure(c, err, status)
 	}
 
 	if apiErr.RetryAfter > 0 {
