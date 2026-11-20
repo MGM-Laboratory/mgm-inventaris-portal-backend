@@ -1,6 +1,6 @@
 # Architecture
 
-Status of this page. It describes the design of the service. The code so far holds the settings, the database pool with the migrations, the error body, the request id, the guest session (cookie, Origin and CSRF checks, role guards, rate limit and janitor), the routes `GET /api/config`, `POST /api/session/guest`, `GET /api/session` and `DELETE /api/session`, and the health routes. Every other statement here is a plan until the code that does it is merged.
+Status of this page. It describes the design of the service. The code so far holds the settings, the database pool with the migrations, the error body, the request id, the guest session (cookie, Origin and CSRF checks, role guards, rate limit and janitor), the admin accounts (Argon2id passwords, TOTP, recovery codes and the command that creates an admin), the routes `GET /api/config`, `POST /api/session/guest`, `GET /api/session`, `DELETE /api/session`, `POST /api/admin/session`, `GET /api/admin/me`, `POST /api/admin/me/password`, `POST /api/admin/me/totp` and `POST /api/admin/me/recovery-codes`, and the health routes. Every other statement here is a plan until the code that does it is merged.
 
 ## What the service does
 
@@ -30,8 +30,13 @@ The backend of the LabMGM inventory portal keeps the loan records of the lab. A 
 The folders below exist today.
 
 ```
-cmd/api                       the entry point
+cmd/api                       the entry point and the command create-admin
 internal/config               settings from the environment
+internal/admin                admin accounts, sign in checks, TOTP enrollment, recovery codes
+internal/admin/admintest      an in-memory admin repository for tests
+internal/password             Argon2id hashing with a cap on parallel hashes, and the rules for a new password
+internal/totp                 TOTP codes of RFC 6238 and the otpauth address
+internal/secretbox            AES-256-GCM sealing of the TOTP secret and derived secrets
 internal/errchain             describes an error for a log line without request values
 internal/server               API app, health app, middleware, role guards, session routes, error mapping
 internal/session              sessions table, tokens, cookie
@@ -42,7 +47,7 @@ internal/database/migrations  the embedded SQL files of golang-migrate
 internal/database/dbtest      a database for each test, skipped without DATABASE_URL
 ```
 
-These packages are planned and have no folder yet. `internal/auth` (admin accounts, Argon2id, TOTP, recovery codes), `internal/catalog` (categories, models, units, availability), `internal/ticket` (tickets, numbers, status changes, handover, return) and `internal/mail` (a sending interface with no provider yet). The admin commands, such as the one that creates an admin, join `cmd/api` with `internal/auth`.
+These packages are planned and have no folder yet. `internal/catalog` (categories, models, units, availability), `internal/ticket` (tickets, numbers, status changes, handover, return) and `internal/mail` (a sending interface with no provider yet).
 
 A package owns its tables and exposes plain functions. A handler never builds SQL. Other packages call the owner of a table and never read its tables.
 
@@ -51,7 +56,9 @@ A package owns its tables and exposes plain functions. A handler never builds SQ
 - A session is a random 256 bit value in an `HttpOnly`, `Secure`, `SameSite=Lax` cookie. The database stores only its SHA-256 hash.
 - The `Secure` flag of the session cookie comes from the setting `SECURE_COOKIE`, which is true by default, and production refuses `false` at start. A development setup over plain http may turn it off. The flag never comes from the request scheme or from `X-Forwarded-Proto`, so a client cannot weaken it. The cookie name has the prefix `__Host-` only while the flag is on, because a browser rejects that prefix without `Secure`.
 - A session has a kind, either guest or admin. A guest session holds the name, the NIM or NIP and the email that the guest typed. It is not an account.
-- An admin signs in with a local account, a password and a TOTP code or a recovery code. Passwords are hashed with Argon2id, and the memory cost and the sign in limits keep two copies of the service within the memory of the host.
+- An admin signs in with a local account, a password and a TOTP code or a recovery code. Passwords are hashed with Argon2id, and the memory cost, the cap on parallel hashes and the sign in limits keep two copies of the service within the memory of the host. A request that cannot get a hash slot within 3 seconds answers `503` and counts as no failed sign in.
+- The sign in answers `invalid_credentials` for every wrong value. An email that is not an account is checked against a dummy hash, so the time does not show which emails are accounts. The counters of the sign in limits hold failures only. A request hits its counters first and gives the hits back when it does not fail, so parallel guesses cannot all pass before the first failure is counted.
+- The TOTP secret is sealed with AES-256-GCM under the key of the setting `TOTP_ENCRYPTION_KEY`, and the admin id is part of what the seal covers. The enrollment stores nothing until its second call, because the secret of the first call is derived from the key, the admin, the session and the time of the last enrollment. A recovery code is stored as a SHA-256 hash and works once.
 - Every rule of access is checked in the service. The frontend only hides screens.
 - A serial number, a place and a condition of a unit are shown only to admins.
 - A secret never goes in the repository, in a log or in an error answer.
