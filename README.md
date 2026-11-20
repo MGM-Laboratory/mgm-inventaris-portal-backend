@@ -21,10 +21,10 @@ The backend of the LabMGM inventory portal, written in Go with PostgreSQL. The f
 
 ## Quick start
 
-The service so far holds the settings, the database schema, the health routes, the route `GET /api/config` and the routes of the guest session (`POST /api/session/guest`, `GET /api/session` and `DELETE /api/session`). The other routes of the contract are not built yet.
+The service so far holds the settings, the database schema, the health routes, the route `GET /api/config`, the routes of the guest session (`POST /api/session/guest`, `GET /api/session` and `DELETE /api/session`) and the routes of the admin account (`POST /api/admin/session`, `GET /api/admin/me`, `POST /api/admin/me/password`, `POST /api/admin/me/totp` and `POST /api/admin/me/recovery-codes`). The other routes of the contract are not built yet.
 
 1. Have a PostgreSQL 17 database and a role that owns it. The service applies its migrations at start.
-2. Copy `.env.example` to `.env` and set `DATABASE_URL` and `PUBLIC_BASE_URL`. The service reads the process environment and not the file, so load the file with your shell or your process manager.
+2. Copy `.env.example` to `.env` and set `DATABASE_URL`, `PUBLIC_BASE_URL` and `TOTP_ENCRYPTION_KEY`. Make the key with `openssl rand -base64 32`. The service reads the process environment and not the file, so load the file with your shell or your process manager.
 3. For a local run over plain http, also set `ENVIRONMENT=development` and `SECURE_COOKIE=false`. Production refuses both an http `PUBLIC_BASE_URL` and a `SECURE_COOKIE` of false.
 4. Start the service with `go run ./cmd/api`.
 
@@ -34,6 +34,15 @@ The API listens on `HTTP_ADDR` and the health routes listen on `HEALTH_ADDR`. Th
 curl http://127.0.0.1:8080/api/config
 curl http://127.0.0.1:8081/healthz
 curl http://127.0.0.1:8081/readyz
+```
+
+### Create the first admin
+
+There is no sign up, so the first admin comes from a command with the settings of the service in the environment. The initial password comes from the variable `ADMIN_INITIAL_PASSWORD` or from one line of the standard input, and never from a flag, because a flag shows in the process list. The command prints the email and the id and refuses an email that exists. Until the admin sets an own password, every sign in gets only a setup session of 15 minutes, which can only set that password and enroll TOTP.
+
+```sh
+read -rs ADMIN_INITIAL_PASSWORD && export ADMIN_INITIAL_PASSWORD
+go run ./cmd/api create-admin --email admin@example.org --name "Example Admin"
 ```
 
 ## Configuration
@@ -55,6 +64,11 @@ The service reads these environment variables at start. A bad value stops the st
 | `MAX_ITEMS_PER_REQUEST` | `10` | The most items in one request, from 1 to 100 |
 | `MAX_DURATION_DAYS` | `30` | The longest loan in days, from 1 to 365 |
 | `MAX_OPEN_TICKETS` | `3` | The most open tickets for one email or one NIM or NIP, from 1 to 50 |
+| `ADMIN_SIGNIN_PAIR_FAILURES` | `5` | The most failed admin sign ins in 15 minutes for one email from one client address, from 1 to 1000. The next request of that pair answers `429` until the window ends. A success does not reset the count, and a failure never locks the account |
+| `ADMIN_SIGNIN_ADDRESS_FAILURES` | `20` | The most failed admin sign ins in an hour for one client address, whatever the email, from 1 to 1000 |
+| `ADMIN_ACCOUNT_FAILURES` | `5` | The most failed password or code checks in 15 minutes on the account routes of one admin session, from 1 to 1000 |
+| `PASSWORD_HASH_CONCURRENCY` | `2` | The most Argon2id hashes that run at once in one copy, from 1 to 16. One hash needs about 19 MiB of memory, and a request that waits more than 3 seconds for a slot answers `503` |
+| `TOTP_ENCRYPTION_KEY` | none, required | The key that seals the TOTP secret of every admin, 32 random bytes in Base64. It is never logged. A lost key makes every stored TOTP secret unreadable, so keep a copy apart from the database. The all zero placeholder of `.env.example` is refused |
 | `GUEST_SIGNIN_PER_HOUR` | `60` | The most guest sign in requests that one client address may send in an hour, from 1 to 100000. Every request counts, and an IPv6 address counts as its `/64` prefix |
 
 ## Documentation
@@ -68,7 +82,7 @@ The service reads these environment variables at start. A bad value stops the st
 
 ```text
 cmd/api/          The entry point of the service
-internal/         The settings, the HTTP servers, the sessions, the rate limits, the janitor, the database pool, the migrations and the test helper
+internal/         The settings, the HTTP servers, the sessions, the admin accounts, the password, TOTP and secret encryption code, the rate limits, the janitor, the database pool, the migrations and the test helpers
 docs/             Design pages and CI/CD documentation
 .github/          Workflows, the lint tool images, issue forms and the pull request template
 ```

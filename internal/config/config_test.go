@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -13,10 +14,17 @@ import (
 
 const sampleDatabaseURL = "postgres://app:s3cret-sample@db.example.test:5432/portal?sslmode=disable"
 
+// sampleKeyText is 32 bytes that are not zero, and sampleKey is the same bytes in Base64, built here so that no key shaped literal sits
+// in the source.
+var sampleKeyText = strings.Repeat("0123456789abcdef", 2)
+
+var sampleKey = base64.StdEncoding.EncodeToString([]byte(sampleKeyText))
+
 func baseEnv() map[string]string {
 	return map[string]string{
-		"DATABASE_URL":    sampleDatabaseURL,
-		"PUBLIC_BASE_URL": "https://portal.example.org",
+		"DATABASE_URL":        sampleDatabaseURL,
+		"PUBLIC_BASE_URL":     "https://portal.example.org",
+		"TOTP_ENCRYPTION_KEY": sampleKey,
 	}
 }
 
@@ -51,6 +59,15 @@ func TestDefaults(t *testing.T) {
 		t.Fatalf("the guest sign in limit is %d", cfg.GuestSigninPerHour)
 	}
 
+	if cfg.AdminSigninPairFailures != 5 || cfg.AdminSigninAddressFailures != 20 || cfg.AdminAccountFailures != 5 || cfg.PasswordHashConcurrency != 2 {
+		t.Fatalf("the admin limits are %d %d %d %d", cfg.AdminSigninPairFailures, cfg.AdminSigninAddressFailures,
+			cfg.AdminAccountFailures, cfg.PasswordHashConcurrency)
+	}
+
+	if string(cfg.TOTPKey()) != sampleKeyText {
+		t.Fatal("the TOTP key was not decoded")
+	}
+
 	if len(cfg.TrustedProxies) != 0 || cfg.DatabaseURL.Reveal() != sampleDatabaseURL {
 		t.Fatal("unexpected proxies or database URL")
 	}
@@ -73,6 +90,11 @@ func TestOverrides(t *testing.T) {
 		"MAX_DURATION_DAYS":     "14",
 		"MAX_OPEN_TICKETS":      "2",
 		"GUEST_SIGNIN_PER_HOUR": "5",
+
+		"ADMIN_SIGNIN_PAIR_FAILURES":    "3",
+		"ADMIN_SIGNIN_ADDRESS_FAILURES": "9",
+		"ADMIN_ACCOUNT_FAILURES":        "4",
+		"PASSWORD_HASH_CONCURRENCY":     "1",
 	}))
 	if err != nil {
 		t.Fatalf("parse failed %v", err)
@@ -94,6 +116,10 @@ func TestOverrides(t *testing.T) {
 
 	if cfg.MaxItemsPerRequest != 5 || cfg.MaxDurationDays != 14 || cfg.MaxOpenTickets != 2 || cfg.GuestSigninPerHour != 5 {
 		t.Fatal("limits were not read")
+	}
+
+	if cfg.AdminSigninPairFailures != 3 || cfg.AdminSigninAddressFailures != 9 || cfg.AdminAccountFailures != 4 || cfg.PasswordHashConcurrency != 1 {
+		t.Fatal("the admin limits were not read")
 	}
 }
 
@@ -171,6 +197,15 @@ func TestBadValues(t *testing.T) {
 		{"sign in limit too low", with(map[string]string{"GUEST_SIGNIN_PER_HOUR": "0"}), "GUEST_SIGNIN_PER_HOUR"},
 		{"sign in limit too high", with(map[string]string{"GUEST_SIGNIN_PER_HOUR": "100001"}), "GUEST_SIGNIN_PER_HOUR"},
 		{"sign in limit not a number", with(map[string]string{"GUEST_SIGNIN_PER_HOUR": "many"}), "GUEST_SIGNIN_PER_HOUR"},
+		{"pair limit too low", with(map[string]string{"ADMIN_SIGNIN_PAIR_FAILURES": "0"}), "ADMIN_SIGNIN_PAIR_FAILURES"},
+		{"address limit too high", with(map[string]string{"ADMIN_SIGNIN_ADDRESS_FAILURES": "1001"}), "ADMIN_SIGNIN_ADDRESS_FAILURES"},
+		{"account limit too low", with(map[string]string{"ADMIN_ACCOUNT_FAILURES": "0"}), "ADMIN_ACCOUNT_FAILURES"},
+		{"hash concurrency too high", with(map[string]string{"PASSWORD_HASH_CONCURRENCY": "17"}), "PASSWORD_HASH_CONCURRENCY"},
+		{"missing TOTP key", map[string]string{"DATABASE_URL": sampleDatabaseURL, "PUBLIC_BASE_URL": "https://portal.example.org"}, "TOTP_ENCRYPTION_KEY"},
+		{"empty TOTP key", with(map[string]string{"TOTP_ENCRYPTION_KEY": ""}), "TOTP_ENCRYPTION_KEY"},
+		{"TOTP key not Base64", with(map[string]string{"TOTP_ENCRYPTION_KEY": "pw-sample!"}), "TOTP_ENCRYPTION_KEY"},
+		{"TOTP key too short", with(map[string]string{"TOTP_ENCRYPTION_KEY": base64.StdEncoding.EncodeToString([]byte("pw-sample"))}), "TOTP_ENCRYPTION_KEY"},
+		{"TOTP key of zeros", with(map[string]string{"TOTP_ENCRYPTION_KEY": base64.StdEncoding.EncodeToString(make([]byte, 32))}), "TOTP_ENCRYPTION_KEY"},
 	}
 
 	for _, tc := range tests {
@@ -210,6 +245,9 @@ func TestSecretIsRedacted(t *testing.T) {
 		fmt.Sprintf("%+v", cfg),
 		fmt.Sprintf("%#v", cfg),
 		cfg.DatabaseURL.LogValue().String(),
+		cfg.TOTPEncryptionKey.String(),
+		fmt.Sprintf("%v", cfg.TOTPEncryptionKey),
+		cfg.TOTPEncryptionKey.LogValue().String(),
 	}
 
 	encoded, err := json.Marshal(cfg)
@@ -222,6 +260,10 @@ func TestSecretIsRedacted(t *testing.T) {
 	for _, text := range printed {
 		if strings.Contains(text, "s3cret-sample") || strings.Contains(text, "db.example.test") {
 			t.Fatalf("a printed form holds the database URL, %q", text)
+		}
+
+		if strings.Contains(text, sampleKey) {
+			t.Fatalf("a printed form holds the TOTP key, %q", text)
 		}
 	}
 

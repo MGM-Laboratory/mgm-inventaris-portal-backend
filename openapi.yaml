@@ -1809,8 +1809,8 @@ paths:
                 started:
                   summary: A call without confirmCode
                   value:
-                    secret: EXAMPLEEXAMPLEEX
-                    otpauthUri: otpauth://totp/Example?secret=EXAMPLEEXAMPLEEX
+                    secret: EXAMPLEEXAMPLEEXEXAMPLEEXAMPLEEX
+                    otpauthUri: otpauth://totp/Example?secret=EXAMPLEEXAMPLEEXEXAMPLEEXAMPLEEX
                 finished:
                   summary: A call with confirmCode
                   value:
@@ -2256,19 +2256,33 @@ components:
               message: Something went wrong. Give the request id to a maintainer.
               requestId: c0a80101-example-request
     Unavailable:
-      description: The database is not reachable.
+      description: >-
+        The database is not reachable, or the password hashing of the service is busy.
+        A busy answer has the header `Retry-After`, and the other answer has none.
       headers:
         X-Request-Id:
           $ref: "#/components/headers/XRequestId"
+        Retry-After:
+          $ref: "#/components/headers/RetryAfter"
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
-          example:
-            error:
-              code: unavailable
-              message: The service cannot reach its database. Try again later.
-              requestId: c0a80101-example-request
+          examples:
+            database:
+              summary: The database is not reachable
+              value:
+                error:
+                  code: unavailable
+                  message: The service cannot reach its database. Try again later.
+                  requestId: c0a80101-example-request
+            busy:
+              summary: The password hashing is busy, on a sign in or a password check
+              value:
+                error:
+                  code: unavailable
+                  message: The service is busy with other sign ins. Try again in a moment.
+                  requestId: c0a80101-example-request
 
   schemas:
     # ---- errors and pages ----
@@ -2580,7 +2594,9 @@ components:
       description: >-
         The email, the password and either a TOTP code or a recovery code.
         An admin who has no TOTP yet sends neither code.
-        The service answers `invalid_credentials` for any wrong or missing value, so the answer does not say which one is wrong.
+        The service answers `invalid_credentials` for any wrong value, so the answer does not say which one is wrong.
+        An admin who has TOTP and sends no code gets the same answer.
+        A missing or malformed email or password answers 422.
       required: [email, password]
       properties:
         email:
@@ -3616,6 +3632,7 @@ components:
         A change of the password.
         It needs the current password.
         An admin session also needs a valid TOTP code, and a setup session has none yet.
+        A new password that equals the current one answers 422 with the detail code `duplicate` on `newPassword`.
         A change deletes the other sessions of the admin.
       required: [currentPassword, newPassword]
       properties:
@@ -3658,11 +3675,11 @@ components:
         secret:
           type: string
           examples:
-            - EXAMPLEEXAMPLEEX
+            - EXAMPLEEXAMPLEEXEXAMPLEEXAMPLEEX
         otpauthUri:
           type: string
           examples:
-            - otpauth://totp/Example?secret=EXAMPLEEXAMPLEEX
+            - otpauth://totp/Example?secret=EXAMPLEEXAMPLEEXEXAMPLEEXAMPLEEX
     RecoveryCodes:
       type: object
       description: One use codes for TOTP. The service shows them once and stores only their hash.

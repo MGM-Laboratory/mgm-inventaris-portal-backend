@@ -19,6 +19,7 @@ const dbTimeout = 10 * time.Second
 // SessionStore is the part of the session package that the routes use.
 type SessionStore interface {
 	CreateGuest(ctx context.Context, identity *session.Identity, previous []byte) (string, session.Session, error)
+	CreateAdmin(ctx context.Context, admin session.Admin, kind session.Kind, previous []byte, endOthers bool) (string, session.Session, error)
 	Load(ctx context.Context, token string) (session.Session, error)
 	Delete(ctx context.Context, tokenHash []byte) error
 }
@@ -26,12 +27,14 @@ type SessionStore interface {
 // RateLimiter is the part of the ratelimit package that the routes use.
 type RateLimiter interface {
 	Hit(ctx context.Context, key string, limit int, window time.Duration) (ratelimit.Result, error)
+	Refund(ctx context.Context, key string, start time.Time) error
 }
 
 // Deps is what the routes need from outside the package.
 type Deps struct {
 	Sessions SessionStore
 	Limiter  RateLimiter
+	Admins   AdminService
 }
 
 // sessionState is what LoadSession found for the request.

@@ -86,6 +86,61 @@ func (s *Store) CreateGuest(ctx context.Context, identity *Identity, previous []
 	return token, sess, nil
 }
 
+// CreateAdmin makes a session of the kind admin or admin_setup and returns the raw token for the cookie. One statement deletes the
+// session that came with the request, and also every other session of the admin when endOthers is true, so a sign in never leaves
+// the old one behind.
+func (s *Store) CreateAdmin(ctx context.Context, admin Admin, kind Kind, previous []byte, endOthers bool) (string, Session, error) {
+	if kind != KindAdmin && kind != KindAdminSetup {
+		return "", Session{}, errors.New("the kind is not an admin kind")
+	}
+
+	token, err := NewToken()
+	if err != nil {
+		return "", Session{}, err
+	}
+
+	csrf, err := NewToken()
+	if err != nil {
+		return "", Session{}, err
+	}
+
+	limits, _ := LimitsFor(kind)
+	now := s.moment()
+	sess := Session{
+		TokenHash:       HashToken(token),
+		Kind:            kind,
+		Admin:           &admin,
+		CSRFToken:       csrf,
+		ViewableTickets: []string{},
+		CreatedAt:       now,
+		LastSeenAt:      now,
+		ExpiresAt:       now.Add(limits.Absolute),
+	}
+
+	// the delete cannot see the row of the insert, because both run on the snapshot of the statement
+	_, err = s.db.Exec(ctx, `
+		with ended as (delete from sessions where token_hash = $1 or ($8::boolean and admin_id = $3::uuid))
+		insert into sessions (token_hash, kind, admin_id, csrf_token, created_at, last_seen_at, expires_at)
+		values ($2, $4, $3::uuid, $5, $6, $6, $7)`,
+		previous, sess.TokenHash, admin.ID, string(kind), csrf, now, sess.ExpiresAt, endOthers)
+	if err != nil {
+		return "", Session{}, fmt.Errorf("insert the admin session %w", err)
+	}
+
+	return token, sess, nil
+}
+
+// DeleteOthers removes every session of an admin except the one with the hash keep, and it takes a pool or a transaction, so the
+// owner of the admin table can end the sessions in the transaction that changes a password. A nil keep removes all of them.
+func DeleteOthers(ctx context.Context, db DB, adminID string, keep []byte) (int64, error) {
+	tag, err := db.Exec(ctx, `delete from sessions where admin_id = $1::uuid and token_hash is distinct from $2::bytea`, adminID, keep)
+	if err != nil {
+		return 0, fmt.Errorf("delete the other sessions %w", err)
+	}
+
+	return tag.RowsAffected(), nil
+}
+
 // Load returns the live session of a token, or ErrNoSession. It writes last_seen_at when the last write is a minute old.
 func (s *Store) Load(ctx context.Context, token string) (Session, error) {
 	if !validToken(token) {

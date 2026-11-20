@@ -14,10 +14,13 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 
+	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/admin"
 	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/config"
 	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/database"
 	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/janitor"
+	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/password"
 	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/ratelimit"
+	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/secretbox"
 	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/server"
 	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/session"
 )
@@ -32,9 +35,15 @@ const (
 	shutdownTimeout = 15 * time.Second
 	// janitorInterval is the time between two sweeps of expired sessions and old counters.
 	janitorInterval = 10 * time.Minute
+	// hashWait is how long a request waits for a free slot of the password hasher before it answers that the service is busy.
+	hashWait = 3 * time.Second
 )
 
 func main() {
+	if len(os.Args) > 1 {
+		os.Exit(runCommand(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
+	}
+
 	level := new(slog.LevelVar)
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})))
 
@@ -96,9 +105,15 @@ func run(level *slog.LevelVar) error {
 		<-janitorDone
 	}()
 
+	admins, err := newAdminService(cfg, pool)
+	if err != nil {
+		return err
+	}
+
 	api := server.NewAPI(cfg, server.Deps{
 		Sessions: session.NewStore(pool, time.Now),
 		Limiter:  ratelimit.New(pool, time.Now),
+		Admins:   admins,
 	})
 	health := server.NewHealth(pool, func() server.PoolStats {
 		stat := pool.Stat()
@@ -125,6 +140,16 @@ func run(level *slog.LevelVar) error {
 	time.Sleep(drainGrace)
 
 	return shutdown(api, health.App())
+}
+
+// newAdminService builds the admin service of the settings on the pool. The command create-admin builds it the same way.
+func newAdminService(cfg config.Config, db admin.DB) (*admin.Service, error) {
+	box, err := secretbox.New(cfg.TOTPKey())
+	if err != nil {
+		return nil, fmt.Errorf("make the TOTP box %w", err)
+	}
+
+	return admin.NewService(admin.NewPostgres(db), password.New(cfg.PasswordHashConcurrency, hashWait), box, time.Now), nil
 }
 
 // shutdown stops both servers together. A server that never ran, because the signal came first, is not an error.

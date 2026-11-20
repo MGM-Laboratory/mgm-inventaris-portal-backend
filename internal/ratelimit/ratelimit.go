@@ -40,6 +40,8 @@ type Result struct {
 	Allowed bool
 	// RetryAfter is the time that is left in the window.
 	RetryAfter time.Duration
+	// WindowStart is the start of the window that counted the hit. Refund needs it, so a refund never reaches into a later window.
+	WindowStart time.Time
 }
 
 // RetryAfterSeconds is RetryAfter in whole seconds for the header Retry-After, and never less than 1.
@@ -67,7 +69,18 @@ func (l *Limiter) Hit(ctx context.Context, key string, limit int, window time.Du
 		return Result{}, fmt.Errorf("count the request %w", err)
 	}
 
-	return Result{Count: count, Allowed: count <= limit, RetryAfter: start.Add(window).Sub(now)}, nil
+	return Result{Count: count, Allowed: count <= limit, RetryAfter: start.Add(window).Sub(now), WindowStart: start}, nil
+}
+
+// Refund takes back one hit in the window that started at start. A limit that counts only failures hits first, so that parallel
+// requests cannot all pass before the first failure is counted, and refunds the hit of a request that did not fail. The count never
+// goes below 0, and a window that is gone is not an error.
+func (l *Limiter) Refund(ctx context.Context, key string, start time.Time) error {
+	if _, err := l.db.Exec(ctx, `update rate_counters set count = greatest(count - 1, 0) where key = $1 and window_start = $2`, key, start); err != nil {
+		return fmt.Errorf("refund the request %w", err)
+	}
+
+	return nil
 }
 
 // DeleteBefore removes the counters of windows that started before the cutoff. A window that has ended counts for nothing.

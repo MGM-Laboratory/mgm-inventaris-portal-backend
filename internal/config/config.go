@@ -2,6 +2,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -29,6 +30,9 @@ const (
 	maxDurationCap = 365
 	maxOpenCap     = 50
 	maxSigninCap   = 100000
+	maxFailureCap  = 1000
+	maxHashCap     = 16
+	totpKeyBytes   = 32
 )
 
 // Config holds the settings of the service. The names of the variables are listed in .env.example.
@@ -61,6 +65,20 @@ type Config struct {
 
 	// GuestSigninPerHour is the most guest sign in requests that one client address may send in an hour.
 	GuestSigninPerHour int `env:"GUEST_SIGNIN_PER_HOUR" envDefault:"60"`
+
+	// AdminSigninPairFailures is the most failed admin sign ins in 15 minutes for one email from one client address. The next request
+	// of that pair answers 429 until the window ends.
+	AdminSigninPairFailures int `env:"ADMIN_SIGNIN_PAIR_FAILURES" envDefault:"5"`
+	// AdminSigninAddressFailures is the most failed admin sign ins in an hour for one client address, whatever the email.
+	AdminSigninAddressFailures int `env:"ADMIN_SIGNIN_ADDRESS_FAILURES" envDefault:"20"`
+	// AdminAccountFailures is the most failed password or code checks in 15 minutes on the account routes of one admin session.
+	AdminAccountFailures int `env:"ADMIN_ACCOUNT_FAILURES" envDefault:"5"`
+	// PasswordHashConcurrency is the most Argon2id hashes that run at once in one copy. One hash needs about 19 MiB.
+	PasswordHashConcurrency int `env:"PASSWORD_HASH_CONCURRENCY" envDefault:"2"`
+
+	// TOTPEncryptionKey is the key that seals the TOTP secret of every admin before it is stored. It is 32 random bytes in Base64.
+	// Losing it makes every stored TOTP secret unreadable, so keep a copy of it apart from the database.
+	TOTPEncryptionKey Secret `env:"TOTP_ENCRYPTION_KEY,required,notEmpty"`
 }
 
 // Load reads the settings from the environment of the process and refuses a value that the service cannot run with.
@@ -181,7 +199,47 @@ func (c *Config) validateLimits() error {
 		return fmt.Errorf("GUEST_SIGNIN_PER_HOUR is %d and must be between 1 and %d", c.GuestSigninPerHour, maxSigninCap)
 	}
 
+	for _, limit := range []struct {
+		name  string
+		value int
+		most  int
+	}{
+		{"ADMIN_SIGNIN_PAIR_FAILURES", c.AdminSigninPairFailures, maxFailureCap},
+		{"ADMIN_SIGNIN_ADDRESS_FAILURES", c.AdminSigninAddressFailures, maxFailureCap},
+		{"ADMIN_ACCOUNT_FAILURES", c.AdminAccountFailures, maxFailureCap},
+		{"PASSWORD_HASH_CONCURRENCY", c.PasswordHashConcurrency, maxHashCap},
+	} {
+		if limit.value < 1 || limit.value > limit.most {
+			return fmt.Errorf("%s is %d and must be between 1 and %d", limit.name, limit.value, limit.most)
+		}
+	}
+
+	return c.validateTOTPKey()
+}
+
+// validateTOTPKey checks the shape of the key and never names its value.
+func (c *Config) validateTOTPKey() error {
+	key, err := base64.StdEncoding.DecodeString(c.TOTPEncryptionKey.Reveal())
+	if err != nil || len(key) != totpKeyBytes {
+		return fmt.Errorf("TOTP_ENCRYPTION_KEY must be %d random bytes in Base64, for example the output of openssl rand -base64 %d", totpKeyBytes, totpKeyBytes)
+	}
+
+	// 32 zero bytes is the placeholder of .env.example, and no random key looks like that
+	if !slices.ContainsFunc(key, func(b byte) bool { return b != 0 }) {
+		return errors.New("TOTP_ENCRYPTION_KEY is the placeholder of .env.example, so make a key with openssl rand -base64 32")
+	}
+
 	return nil
+}
+
+// TOTPKey returns the decoded key. Load has checked it, so a Config that Load made never fails here.
+func (c Config) TOTPKey() []byte {
+	key, err := base64.StdEncoding.DecodeString(c.TOTPEncryptionKey.Reveal())
+	if err != nil {
+		return nil
+	}
+
+	return key
 }
 
 func (c Config) SlogLevel() (slog.Level, error) {

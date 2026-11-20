@@ -50,6 +50,48 @@ func (f *fakeStore) CreateGuest(_ context.Context, identity *session.Identity, p
 	return token, sess, nil
 }
 
+func (f *fakeStore) CreateAdmin(_ context.Context, adm session.Admin, kind session.Kind, previous []byte, endOthers bool) (string, session.Session, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	token, _ := session.NewToken()
+	csrf, _ := session.NewToken()
+	now := time.Now().UTC().Truncate(time.Second)
+	limits, _ := session.LimitsFor(kind)
+
+	sess := session.Session{
+		TokenHash: session.HashToken(token), Kind: kind, Admin: &adm, CSRFToken: csrf,
+		CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(limits.Absolute),
+	}
+
+	delete(f.sessions, string(previous))
+
+	if endOthers {
+		for key, other := range f.sessions {
+			if other.Admin != nil && other.Admin.ID == adm.ID {
+				delete(f.sessions, key)
+			}
+		}
+	}
+
+	f.sessions[string(sess.TokenHash)] = sess
+	f.created++
+
+	return token, sess, nil
+}
+
+// endOthers is what the real repository does in SetPassword, for the admin tests.
+func (f *fakeStore) endOthers(adminID string, keep []byte) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	for key, other := range f.sessions {
+		if other.Admin != nil && other.Admin.ID == adminID && key != string(keep) {
+			delete(f.sessions, key)
+		}
+	}
+}
+
 func (f *fakeStore) Load(_ context.Context, token string) (session.Session, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -139,6 +181,10 @@ func (f *fakeLimiter) Hit(_ context.Context, key string, limit int, window time.
 	return ratelimit.Result{Count: len(f.keys), Allowed: !f.over, RetryAfter: f.retry}, nil
 }
 
+func (f *fakeLimiter) Refund(context.Context, string, time.Time) error {
+	return f.err
+}
+
 func newTestAPI() *fiber.App {
 	return NewAPI(testConfig(), Deps{Sessions: newFakeStore(), Limiter: &fakeLimiter{}})
 }
@@ -154,7 +200,8 @@ func send(app *fiber.App, method, path, body string, headers map[string]string) 
 		req.Header.Set(k, v)
 	}
 
-	res, err := app.Test(req)
+	// Argon2 under the race detector on a shared runner can take longer than the default of one second
+	res, err := app.Test(req, fiber.TestConfig{Timeout: 30 * time.Second, FailOnTimeout: true})
 	if err != nil {
 		return nil, nil, err
 	}
