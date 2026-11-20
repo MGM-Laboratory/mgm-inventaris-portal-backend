@@ -440,7 +440,7 @@ func TestReadyzAnswers503WhileDraining(t *testing.T) {
 		t.Fatalf("answer while draining is %d %s", code, body)
 	}
 
-	if res, _ := do(t, h.App(), http.MethodGet, "/healthz", nil); res.StatusCode != 200 {
+	if res, _ := do(t, h.App(), http.MethodGet, "/healthz", nil); res.StatusCode != http.StatusOK {
 		t.Fatalf("healthz while draining is %d", res.StatusCode)
 	}
 }

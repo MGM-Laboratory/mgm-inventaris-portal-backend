@@ -46,10 +46,14 @@ const unmatched = "unmatched"
 
 // routeLabel is the pattern of the route that ran, and never the path of the request, because a path can hold a ticket number. The
 // router answers an unknown path with 404 and a known path with another method with 405. Both are labeled unmatched, because the
-// route that fiber reports for them is the middleware.
+// route that fiber reports for them is the middleware. A request that the router never matched has no pattern either.
 func routeLabel(c fiber.Ctx, err error) string {
 	var fiberErr *fiber.Error
 	if errors.As(err, &fiberErr) && (fiberErr.Code == http.StatusNotFound || fiberErr.Code == http.StatusMethodNotAllowed) {
+		return unmatched
+	}
+
+	if !c.Matched() {
 		return unmatched
 	}
 
