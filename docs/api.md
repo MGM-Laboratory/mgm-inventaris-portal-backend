@@ -147,7 +147,7 @@ A unit shows one status. The status is `retired`, `lost` or `maintenance` for th
 - A search text `q` needs at least 2 characters. A shorter text answers `422`.
 - A request that creates a ticket is refused with `422` when a quantity is above the available quantity at that moment. The check holds nothing, because the hold starts at the approval.
 - The note of an approval, a reject or an admin cancel is the `decisionNote` of the ticket and is also in the history. The notes of a return are only in the history and in the ticket units.
-- Cancelling a ticket that is already cancelled answers `200` with the ticket. The status check runs before the version check, so the retry of a lost answer works with the old version, and the note of the second cancel is not stored.
+- Cancelling a ticket that is already cancelled answers `200` with the ticket. A guest cancel has no body and no version, so a caller that lost the answer sends the same request again. An admin cancel checks the status before the version, so the retry of a lost answer works with the old version, and the note of the second cancel is not stored.
 - The routes that create a ticket, a model, a category or units accept an `Idempotency-Key`. A key counts for one route only.
 - Names of categories and models and serial numbers are unique ignoring letter case, and a prefix is upper case by its pattern. A clash answers `409` with the code `duplicate`.
 - A new model takes either an existing category or a new one. A new category with a name that exists reuses the existing one and ignores the submitted tone.

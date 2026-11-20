@@ -576,9 +576,9 @@ paths:
       summary: Cancel a ticket
       description: >-
         A guest session can cancel a ticket of the session in the status `diajukan`.
-        A second cancel of a ticket that is already `dibatalkan` answers 200 with the ticket and changes nothing. The status check runs before the version check, so the retry of a lost answer works with the old `version`, and the note of the second cancel is not stored.
+        The request has no body and no version, because only the status of the ticket decides.
+        A second cancel of a ticket that is already `dibatalkan` answers 200 with the ticket and changes nothing, so a caller that lost the answer sends the same request again.
         Any other status answers 409 with the code `status_conflict`.
-        The request has no body.
       security:
         - sessionCookie: []
           csrfToken: []
@@ -1599,6 +1599,7 @@ paths:
         From `active` to `maintenance`, `lost` or `retired`.
         From `maintenance` to `active`, `lost` or `retired`.
         From `lost` to `active` or `retired`.
+        From `retired` to `active`.
         Every change to `active` answers 409 with the code `status_conflict` while the model of the unit is retired.
         Any other change answers 409 with the code `status_conflict`.
         A unit in an open ticket cannot leave `active`, and the service answers 409 with the code `unit_held`.
