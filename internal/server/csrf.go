@@ -24,14 +24,27 @@ var csrfExempt = map[string]struct{}{
 
 func isCSRFExempt(method, path string) bool {
 	// the router ignores case and a trailing slash, so the list does too
-	_, ok := csrfExempt[method+" "+strings.ToLower(strings.TrimRight(path, "/"))]
+	_, ok := csrfExempt[method+" "+asciiLower(strings.TrimRight(path, "/"))]
 
 	return ok
 }
 
-// isWrite says whether a method changes state, which is what the Origin and CSRF checks guard.
+// isWrite says whether a method may change state, which is what the Origin and CSRF checks guard. Only the safe methods are free, so
+// a method that a route adds later is guarded without a change here.
 func isWrite(method string) bool {
-	return method == http.MethodPost || method == http.MethodPatch || method == http.MethodDelete
+	return method != http.MethodGet && method != http.MethodHead && method != http.MethodOptions
+}
+
+// asciiLower folds only the letters A to Z, as the router does, so a path cannot match the list here and miss the route.
+func asciiLower(s string) string {
+	b := []byte(s)
+	for i, ch := range b {
+		if ch >= 'A' && ch <= 'Z' {
+			b[i] = ch + ('a' - 'A')
+		}
+	}
+
+	return string(b)
 }
 
 // originAllowed applies the rule of docs/api.md. The Origin header has to equal the public origin. A request with no Origin header
@@ -46,7 +59,7 @@ func originAllowed(origin, fetchSite, publicOrigin string) bool {
 
 // OriginAndCSRF guards every POST, PATCH and DELETE. The origin check comes first and covers every write. The CSRF token check
 // follows for a write that has a session, except on the routes of csrfExempt. A write without a live session passes this check, and
-// the guard of its route answers 401 or 503.
+// the guard of its route answers 401. A write whose session lookup failed is refused here with 503 or 500.
 func OriginAndCSRF(publicOrigin string) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		method := c.Method()
@@ -60,6 +73,11 @@ func OriginAndCSRF(publicOrigin string) fiber.Handler {
 
 		if isCSRFExempt(method, c.Path()) {
 			return c.Next()
+		}
+
+		// a lookup that failed must not let a write skip the token check, so the write is refused here
+		if state := stateOf(c); state.loadErr != nil {
+			return dbError("load the session", state.loadErr)
 		}
 
 		sess := currentSession(c)

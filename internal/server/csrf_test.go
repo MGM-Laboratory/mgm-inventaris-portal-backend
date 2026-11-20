@@ -54,6 +54,8 @@ func TestCSRFExemptList(t *testing.T) {
 		{http.MethodPost, "/api/admin/session", true},
 		{http.MethodPost, "/api/tickets/lookup", true},
 		{http.MethodPost, "/API/Session/Guest/", true},
+		// the Kelvin sign lowercases to k in Unicode, but the router folds ASCII only, so this path is not the exempt route
+		{http.MethodPost, "/api/tickets/lo\u212aup", false},
 		{http.MethodDelete, "/api/session/guest", false},
 		{http.MethodPost, "/api/session", false},
 		{http.MethodDelete, "/api/session", false},
@@ -252,5 +254,51 @@ func TestDatabaseUnreachable(t *testing.T) {
 
 	if errors.As(dbError("insert", errors.New("bug")), &apiErr) {
 		t.Fatal("a bug became an API error")
+	}
+}
+
+func TestIsWrite(t *testing.T) {
+	for method, want := range map[string]bool{
+		http.MethodGet: false, http.MethodHead: false, http.MethodOptions: false,
+		http.MethodPost: true, http.MethodPatch: true, http.MethodDelete: true, http.MethodPut: true,
+	} {
+		if got := isWrite(method); got != want {
+			t.Fatalf("%s gave %v, want %v", method, got, want)
+		}
+	}
+}
+
+func TestAFailedSessionLookupRefusesAWrite(t *testing.T) {
+	tests := []struct {
+		name   string
+		err    error
+		status int
+		code   string
+	}{
+		{"database outage", &pgconn.PgError{Code: "57014"}, 503, "unavailable"},
+		{"bug in a statement", errors.New("scan the row"), 500, "internal"},
+	}
+
+	for _, tc := range tests {
+		store := newFakeStore()
+		store.loadErr = tc.err
+		app := NewAPI(testConfig(), Deps{Sessions: store, Limiter: &fakeLimiter{}})
+
+		app.Post("/test/free", func(c fiber.Ctx) error { return c.SendStatus(http.StatusNoContent) })
+		app.Get("/test/guarded", RequireSession(), func(c fiber.Ctx) error { return c.SendStatus(http.StatusNoContent) })
+
+		token, _ := session.NewToken()
+		headers := map[string]string{"Cookie": session.CookieName(true) + "=" + token, "Origin": testOrigin}
+
+		// a write with no guard of its own must not skip the token check because the lookup failed
+		res, data := mustSend(t, app, http.MethodPost, "/test/free", "", headers)
+		if res.StatusCode != tc.status || decodeError(t, data).Error.Code != tc.code {
+			t.Fatalf("%s, the write answers %d %s", tc.name, res.StatusCode, data)
+		}
+
+		res, data = mustSend(t, app, http.MethodGet, "/test/guarded", "", headers)
+		if res.StatusCode != tc.status || decodeError(t, data).Error.Code != tc.code {
+			t.Fatalf("%s, the guard answers %d %s", tc.name, res.StatusCode, data)
+		}
 	}
 }
