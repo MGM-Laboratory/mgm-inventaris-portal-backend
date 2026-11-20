@@ -1,0 +1,4 @@
+# Fingerprints of test values in two commits of the admin account pull request. They are public sample values (a repeated pattern of
+# hex digits and the RFC 6238 test secret) and no real secret. The tests build them at run time now, but the commits stay in history.
+8f0b2e3c15c7b0408b78999a7dc1adcd5c9f5661:internal/config/config_test.go:generic-api-key:19
+5a10b6ce5dcddd412852e383282ba648386078d2:internal/totp/totp_test.go:generic-api-key:115

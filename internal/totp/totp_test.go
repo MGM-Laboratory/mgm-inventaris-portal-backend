@@ -1,6 +1,7 @@
 package totp
 
 import (
+	"encoding/base32"
 	"net/url"
 	"testing"
 	"time"
@@ -112,7 +113,7 @@ func TestURI(t *testing.T) {
 	}
 
 	want := map[string]string{
-		"secret": "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ", "issuer": "LabMGM", "algorithm": "SHA1", "digits": "6", "period": "30",
+		"secret": base32.StdEncoding.EncodeToString(rfcSecret), "issuer": "LabMGM", "algorithm": "SHA1", "digits": "6", "period": "30",
 	}
 
 	for key, value := range want {

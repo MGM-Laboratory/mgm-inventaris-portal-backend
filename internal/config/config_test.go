@@ -16,7 +16,7 @@ const sampleDatabaseURL = "postgres://app:s3cret-sample@db.example.test:5432/por
 
 // sampleKeyText is 32 bytes that are not zero, and sampleKey is the same bytes in Base64, built here so that no key shaped literal sits
 // in the source.
-const sampleKeyText = "0123456789abcdef0123456789abcdef"
+var sampleKeyText = strings.Repeat("0123456789abcdef", 2)
 
 var sampleKey = base64.StdEncoding.EncodeToString([]byte(sampleKeyText))
 
