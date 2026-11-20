@@ -21,7 +21,7 @@ The backend of the LabMGM inventory portal, written in Go with PostgreSQL. The f
 
 ## Quick start
 
-The service so far holds the settings, the database schema, the health routes and the route `GET /api/config`. The other routes of the contract are not built yet.
+The service so far holds the settings, the database schema, the health routes, the route `GET /api/config` and the routes of the guest session (`POST /api/session/guest`, `GET /api/session` and `DELETE /api/session`). The other routes of the contract are not built yet.
 
 1. Have a PostgreSQL 17 database and a role that owns it. The service applies its migrations at start.
 2. Copy `.env.example` to `.env` and set `DATABASE_URL` and `PUBLIC_BASE_URL`. The service reads the process environment and not the file, so load the file with your shell or your process manager.
@@ -55,6 +55,7 @@ The service reads these environment variables at start. A bad value stops the st
 | `MAX_ITEMS_PER_REQUEST` | `10` | The most items in one request, from 1 to 100 |
 | `MAX_DURATION_DAYS` | `30` | The longest loan in days, from 1 to 365 |
 | `MAX_OPEN_TICKETS` | `3` | The most open tickets for one email or one NIM or NIP, from 1 to 50 |
+| `GUEST_SIGNIN_PER_HOUR` | `60` | The most guest sign in requests that one client address may send in an hour, from 1 to 100000. Every request counts, and an IPv6 address counts as its `/64` prefix |
 
 ## Documentation
 
@@ -67,7 +68,7 @@ The service reads these environment variables at start. A bad value stops the st
 
 ```text
 cmd/api/          The entry point of the service
-internal/         The settings, the HTTP servers, the database pool, the migrations and the test helper
+internal/         The settings, the HTTP servers, the sessions, the rate limits, the janitor, the database pool, the migrations and the test helper
 docs/             Design pages and CI/CD documentation
 .github/          Workflows, the lint tool images, issue forms and the pull request template
 ```

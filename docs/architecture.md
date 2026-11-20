@@ -1,6 +1,6 @@
 # Architecture
 
-Status of this page. It describes the design of the service. The code so far is the skeleton, which holds the settings, the database pool with the migrations, the error body, the request id, the route `GET /api/config` and the health routes. Every other statement here is a plan until the code that does it is merged.
+Status of this page. It describes the design of the service. The code so far holds the settings, the database pool with the migrations, the error body, the request id, the guest session (cookie, Origin and CSRF checks, role guards, rate limit and janitor), the routes `GET /api/config`, `POST /api/session/guest`, `GET /api/session` and `DELETE /api/session`, and the health routes. Every other statement here is a plan until the code that does it is merged.
 
 ## What the service does
 
@@ -32,13 +32,16 @@ The folders below exist today.
 ```
 cmd/api                       the entry point
 internal/config               settings from the environment
-internal/server               API app, health app, middleware, error mapping
+internal/server               API app, health app, middleware, role guards, session routes, error mapping
+internal/session              sessions table, tokens, cookie
+internal/ratelimit            fixed window counters in the database
+internal/janitor              scheduled sweep of expired sessions and old counters
 internal/database             pool and migrations
 internal/database/migrations  the embedded SQL files of golang-migrate
 internal/database/dbtest      a database for each test, skipped without DATABASE_URL
 ```
 
-These packages are planned and have no folder yet. `internal/session` (sessions, cookies, CSRF), `internal/auth` (admin accounts, Argon2id, TOTP, recovery codes), `internal/catalog` (categories, models, units, availability), `internal/ticket` (tickets, numbers, status changes, handover, return), `internal/ratelimit` (counters in the database), `internal/janitor` (scheduled jobs) and `internal/mail` (a sending interface with no provider yet). The admin commands, such as the one that creates an admin, join `cmd/api` with `internal/auth`.
+These packages are planned and have no folder yet. `internal/auth` (admin accounts, Argon2id, TOTP, recovery codes), `internal/catalog` (categories, models, units, availability), `internal/ticket` (tickets, numbers, status changes, handover, return) and `internal/mail` (a sending interface with no provider yet). The admin commands, such as the one that creates an admin, join `cmd/api` with `internal/auth`.
 
 A package owns its tables and exposes plain functions. A handler never builds SQL. Other packages call the owner of a table and never read its tables.
 
