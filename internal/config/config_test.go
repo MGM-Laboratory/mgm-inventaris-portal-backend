@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -44,8 +45,8 @@ func TestDefaults(t *testing.T) {
 		t.Fatalf("unexpected limits %d %d %d", cfg.MaxItemsPerRequest, cfg.MaxDurationDays, cfg.MaxOpenTickets)
 	}
 
-	if cfg.TrustedProxy != "" || cfg.DatabaseURL.Reveal() != sampleDatabaseURL {
-		t.Fatal("unexpected proxy or database URL")
+	if len(cfg.TrustedProxies) != 0 || cfg.DatabaseURL.Reveal() != sampleDatabaseURL {
+		t.Fatal("unexpected proxies or database URL")
 	}
 
 	if level, err := cfg.SlogLevel(); err != nil || level != slog.LevelInfo {
@@ -61,7 +62,7 @@ func TestOverrides(t *testing.T) {
 		"LOG_LEVEL":             "DEBUG",
 		"MIGRATE_ON_START":      "false",
 		"PUBLIC_BASE_URL":       "http://Localhost:5173/",
-		"TRUSTED_PROXY":         "::ffff:10.0.0.2",
+		"TRUSTED_PROXIES":       "::ffff:10.0.0.2, 172.16.0.0/12,fd00::/8",
 		"MAX_ITEMS_PER_REQUEST": "5",
 		"MAX_DURATION_DAYS":     "14",
 		"MAX_OPEN_TICKETS":      "2",
@@ -74,7 +75,13 @@ func TestOverrides(t *testing.T) {
 		t.Fatalf("base URL is %q", cfg.PublicBaseURL)
 	}
 
-	if cfg.TrustedProxy != "10.0.0.2" || cfg.MigrateOnStart || cfg.LogLevel != "debug" {
+	wantProxies := []string{"10.0.0.2/32", "172.16.0.0/12", "fd00::/8"}
+	gotProxies := make([]string, 0, len(cfg.TrustedProxies))
+	for _, prefix := range cfg.TrustedProxies {
+		gotProxies = append(gotProxies, prefix.String())
+	}
+
+	if !slices.Equal(gotProxies, wantProxies) || cfg.MigrateOnStart || cfg.LogLevel != "debug" {
 		t.Fatalf("unexpected values %+v", cfg)
 	}
 
@@ -118,7 +125,11 @@ func TestBadValues(t *testing.T) {
 		{"http address", with(map[string]string{"HTTP_ADDR": "8080"}), "HTTP_ADDR"},
 		{"health port", with(map[string]string{"HEALTH_ADDR": "127.0.0.1:0"}), "HEALTH_ADDR"},
 		{"same address", with(map[string]string{"HEALTH_ADDR": ":8080"}), "HEALTH_ADDR"},
-		{"trusted proxy", with(map[string]string{"TRUSTED_PROXY": "proxy.example.test"}), "TRUSTED_PROXY"},
+		{"proxy host name", with(map[string]string{"TRUSTED_PROXIES": "proxy.example.test"}), "TRUSTED_PROXIES"},
+		{"proxy range", with(map[string]string{"TRUSTED_PROXIES": "10.0.0.0/33"}), "TRUSTED_PROXIES"},
+		{"one bad proxy in a list", with(map[string]string{"TRUSTED_PROXIES": "10.0.0.1,nope"}), "TRUSTED_PROXIES"},
+		{"empty proxy entry", with(map[string]string{"TRUSTED_PROXIES": "10.0.0.1,,10.0.0.2"}), "TRUSTED_PROXIES"},
+		{"wide mapped range", with(map[string]string{"TRUSTED_PROXIES": "::ffff:0.0.0.0/64"}), "TRUSTED_PROXIES"},
 		{"pool size", with(map[string]string{"DB_MAX_CONNS": "0"}), "DB_MAX_CONNS"},
 		{"not a number", with(map[string]string{"MAX_OPEN_TICKETS": "many"}), "MAX_OPEN_TICKETS"},
 		{"not a bool", with(map[string]string{"MIGRATE_ON_START": "maybe"}), "MIGRATE_ON_START"},

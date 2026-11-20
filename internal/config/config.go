@@ -43,8 +43,11 @@ type Config struct {
 
 	// PublicBaseURL is the public address of the portal. The QR address of a unit is this value, /aset/ and the tag.
 	PublicBaseURL string `env:"PUBLIC_BASE_URL,required,notEmpty"`
-	// TrustedProxy is the address of the reverse proxy. The service reads X-Real-IP only from a request that comes from it.
-	TrustedProxy string `env:"TRUSTED_PROXY"`
+	// TrustedProxyList is the raw TRUSTED_PROXIES, a comma separated list of IP addresses and CIDR ranges. Behind a published Docker
+	// port the peer is the gateway of the bridge, so a range is more useful than one address. Empty trusts no header.
+	TrustedProxyList []string `env:"TRUSTED_PROXIES" envSeparator:","`
+	// TrustedProxies is the parsed list. Only a request whose peer is in it may set X-Real-IP.
+	TrustedProxies []netip.Prefix `env:"-"`
 
 	Environment string `env:"ENVIRONMENT" envDefault:"production"`
 	LogLevel    string `env:"LOG_LEVEL" envDefault:"info"`
@@ -117,14 +120,12 @@ func (c *Config) validate() error {
 		return err
 	}
 
-	if c.TrustedProxy != "" {
-		addr, err := netip.ParseAddr(strings.TrimSpace(c.TrustedProxy))
-		if err != nil {
-			return errors.New("TRUSTED_PROXY must be an IP address")
-		}
-
-		c.TrustedProxy = addr.Unmap().String()
+	proxies, err := parseProxies(c.TrustedProxyList)
+	if err != nil {
+		return err
 	}
+
+	c.TrustedProxies = proxies
 
 	return c.validateLimits()
 }
@@ -165,7 +166,6 @@ func (c *Config) validateLimits() error {
 	return nil
 }
 
-// SlogLevel returns the level of the logger for LOG_LEVEL.
 func (c Config) SlogLevel() (slog.Level, error) {
 	switch c.LogLevel {
 	case "debug":
