@@ -200,7 +200,8 @@ func send(app *fiber.App, method, path, body string, headers map[string]string) 
 		req.Header.Set(k, v)
 	}
 
-	res, err := app.Test(req)
+	// Argon2 under the race detector on a shared runner can take longer than the default of one second
+	res, err := app.Test(req, fiber.TestConfig{Timeout: 30 * time.Second, FailOnTimeout: true})
 	if err != nil {
 		return nil, nil, err
 	}

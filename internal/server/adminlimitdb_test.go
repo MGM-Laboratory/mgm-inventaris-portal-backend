@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -47,7 +48,7 @@ func newDBAdminApp(t *testing.T, mutate func(*config.Config)) (*pgxpool.Pool, *a
 	// the clock stands still at the start of a window, so no test crosses into the next one
 	clk := &stepClock{now: time.Date(2026, 11, 17, 3, 0, 0, 0, time.UTC)}
 
-	box, err := secretbox.New([]byte("0123456789abcdef0123456789abcdef"))
+	box, err := secretbox.New([]byte(strings.Repeat("0123456789abcdef", 2)))
 	if err != nil {
 		t.Fatalf("make the box %v", err)
 	}
@@ -152,8 +153,15 @@ func TestParallelAdminGuessesAreCountedBeforeTheyFinish(t *testing.T) {
 	results := make(chan int, 12)
 
 	for range 12 {
+		// the goroutine must not call t.Fatalf, so a failed request is sent as a status that no check accepts
 		go func() {
-			res, _, _ := env.signIn(client{}, env.signInBody(p.email, otherPassword, nil))
+			res, _, err := send(env.app, http.MethodPost, "/api/admin/session", env.signInBody(p.email, otherPassword, nil), client{}.headers(nil))
+			if err != nil {
+				results <- -1
+
+				return
+			}
+
 			results <- res.StatusCode
 		}()
 	}
