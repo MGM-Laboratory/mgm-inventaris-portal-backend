@@ -81,7 +81,7 @@ func parse(environ map[string]string) (Config, error) {
 
 func (c *Config) validate() error {
 	if !slices.Contains([]string{EnvDevelopment, EnvProduction}, c.Environment) {
-		return fmt.Errorf("ENVIRONMENT is %q and must be %s or %s", c.Environment, EnvDevelopment, EnvProduction)
+		return fmt.Errorf("ENVIRONMENT must be %s or %s", EnvDevelopment, EnvProduction)
 	}
 
 	// the flag comes from the settings and never from the request, so a spoofed X-Forwarded-Proto cannot weaken it
@@ -91,7 +91,7 @@ func (c *Config) validate() error {
 
 	c.LogLevel = strings.ToLower(c.LogLevel)
 	if _, err := c.SlogLevel(); err != nil {
-		return fmt.Errorf("LOG_LEVEL is %q and must be debug, info, warn or error", c.LogLevel)
+		return errors.New("LOG_LEVEL must be debug, info, warn or error")
 	}
 
 	if err := checkAddr("HTTP_ADDR", c.HTTPAddr); err != nil {
@@ -132,7 +132,7 @@ func (c *Config) validate() error {
 
 func (c *Config) validatePublicBaseURL() error {
 	base, err := url.Parse(c.PublicBaseURL)
-	if err != nil || (base.Scheme != "http" && base.Scheme != "https") || base.Host == "" {
+	if err != nil || (base.Scheme != "http" && base.Scheme != "https") || base.Hostname() == "" {
 		return errors.New("PUBLIC_BASE_URL must be an absolute http or https URL such as https://portal.example.org")
 	}
 
@@ -184,12 +184,12 @@ func (c Config) SlogLevel() (slog.Level, error) {
 func checkAddr(name, addr string) error {
 	_, port, err := net.SplitHostPort(addr)
 	if err != nil {
-		return fmt.Errorf("%s is %q and must look like host:port or :port", name, addr)
+		return fmt.Errorf("%s must look like host:port or :port", name)
 	}
 
 	number, err := strconv.ParseUint(port, 10, 16)
 	if err != nil || number == 0 {
-		return fmt.Errorf("%s is %q and needs a port from 1 to %d", name, addr, maxPort)
+		return fmt.Errorf("%s needs a port from 1 to %d", name, maxPort)
 	}
 
 	return nil
