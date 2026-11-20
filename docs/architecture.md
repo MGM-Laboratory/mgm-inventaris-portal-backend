@@ -45,7 +45,7 @@ A package owns its tables and exposes plain functions. A handler never builds SQ
 ## Security model
 
 - A session is a random 256 bit value in an `HttpOnly`, `Secure`, `SameSite=Lax` cookie. The database stores only its SHA-256 hash.
-- The `Secure` flag of the session cookie comes from the setting `ENVIRONMENT`, and production forces it. A development setup may turn it off with `SECURE_COOKIE=false`. The flag never comes from the request scheme or from `X-Forwarded-Proto`, so a client cannot weaken it.
+- The `Secure` flag of the session cookie comes from the setting `SECURE_COOKIE`, which is true by default, and production refuses `false` at start. A development setup over plain http may turn it off. The flag never comes from the request scheme or from `X-Forwarded-Proto`, so a client cannot weaken it. The cookie name has the prefix `__Host-` only while the flag is on, because a browser rejects that prefix without `Secure`.
 - A session has a kind, either guest or admin. A guest session holds the name, the NIM or NIP and the email that the guest typed. It is not an account.
 - An admin signs in with a local account, a password and a TOTP code or a recovery code. Passwords are hashed with Argon2id, and the memory cost and the sign in limits keep two copies of the service within the memory of the host.
 - Every rule of access is checked in the service. The frontend only hides screens.

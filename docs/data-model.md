@@ -1,6 +1,6 @@
 # Data model
 
-Status of this page. It describes the planned schema. The migrations are not written yet, so the code is the source of truth once it exists, and this page is updated in the same pull request as any migration.
+Status of this page. It describes the planned schema. The first migration is written, and the files in `internal/database/migrations` are the source of truth. This page is updated in the same pull request as any migration.
 
 All tables live in one PostgreSQL database. Ids are UUIDs made by the service. Timestamps are `timestamptz` and are stored in UTC. A pickup date is a plain `date` and is read as a date in the time zone Asia/Jakarta.
 
@@ -42,7 +42,7 @@ All tables live in one PostgreSQL database. Ids are UUIDs made by the service. T
 - A partial unique index on `ticket_units (unit_id) where returned_at is null` makes it impossible that two open tickets hold the same unit.
 - A ticket asks for models. The units are chosen at handover, when the admin scans the QR label of each unit.
 - An open ticket, for the limit of open tickets, is a ticket in the status `diajukan`, `disetujui`, `siap_diambil` or `dipinjam`.
-- Indexes cover the lookups that the routes make. They are `tickets (status, created_at)`, `tickets (lower(requester_email))`, `tickets (requester_nim_nip)` and `units (model_id)`. The unique constraint on `tickets (number)` and the start of the primary key of `ticket_units` already serve those two lookups.
+- Indexes cover the lookups that the routes make, and the migration lists every one of them. The unique constraint on `tickets (number)` and the start of the primary key of `ticket_units` already serve those two lookups.
 
 ## Stock rules
 
