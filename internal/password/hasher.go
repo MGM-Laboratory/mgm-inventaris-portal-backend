@@ -45,6 +45,9 @@ type Hasher struct {
 
 // New returns a hasher that runs at most concurrency hashes at once. A caller that cannot get a slot within wait gets ErrBusy.
 func New(concurrency int, wait time.Duration) *Hasher {
+	// the dummy hash is made now, so the first sign in with an unknown email costs the same as every later one
+	dummy()
+
 	return &Hasher{slots: make(chan struct{}, max(concurrency, 1)), wait: wait}
 }
 

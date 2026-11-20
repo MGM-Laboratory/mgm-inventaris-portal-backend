@@ -15,7 +15,7 @@ const (
 	// adminFailureWindow is the window of the limits on the failed admin sign ins of one email and address, and on the failed checks
 	// of one session. The wait after the limit is the rest of the window, so it is 15 minutes at most.
 	adminFailureWindow = 15 * time.Minute
-	// adminAddressWindow is the window of the limit on the failed admin sign ins of one address.
+	// adminAddressWindow is the window of the limit on the failed admin sign ins of one address. The wait after it is up to an hour.
 	adminAddressWindow = time.Hour
 	// refundTimeout bounds the refund of a hit.
 	refundTimeout = 5 * time.Second
