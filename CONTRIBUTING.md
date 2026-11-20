@@ -23,12 +23,12 @@ There is no `dev` branch. Every change to `main` goes through a pull request.
 
 ## Checks
 
-Every pull request runs the checks below. The ruleset of the repository requires **Conventional commits**, **PR format**, **Config gate** and **Security gate**. `docs/ci-cd.md` lists the current state.
+Every pull request runs the checks below. The ruleset of the repository requires **Conventional commits**, **PR format**, **Config gate**, **Security gate** and **CI gate**. `docs/ci-cd.md` lists the current state.
 
 - **Conventional commits** reads every commit message and the title of the pull request.
 - **PR format** reads the branch name, the label, the assignee and the body.
 - **Config gate** runs actionlint, Zizmor, ShellCheck, dotenv-linter for `.env.example`, ls-lint for file names, the Renovate validator and the Redocly lint of `openapi.yaml`.
-- **CI gate** summarizes the Go jobs, which are `Go build and vet`, `Go lint` and `Go test`. The ruleset does not require it yet, see `docs/ci-cd.md`.
+- **CI gate** summarizes the Go jobs, which are `Go build and vet`, `Go lint` and `Go test`.
 - **Security gate** summarizes CodeQL for Go, dependency review, gitleaks and a Trivy filesystem scan. Dependency review fails on a finding of severity high or above, and gitleaks fails on any finding. Trivy fails on a CRITICAL or HIGH finding and also sends its findings to code scanning. For a pull request from a fork, the Trivy findings are not uploaded to code scanning, because a fork token cannot write there. They are kept for 7 days as the artifact `trivy-fs-results` of the run, and the check still fails on a CRITICAL or HIGH finding.
 - **pre-commit.ci** is not required by the ruleset, but its report should be clean. It runs repository hygiene checks on every pull request and does not push a fix.
 

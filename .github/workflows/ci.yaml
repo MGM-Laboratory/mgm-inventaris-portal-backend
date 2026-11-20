@@ -140,7 +140,7 @@ jobs:
           path: coverage.out
           if-no-files-found: ignore
 
-  # The one check that the ruleset will require, so a job can be added or renamed here without a change of the ruleset
+  # The one check of this workflow that the ruleset requires, so a job can be added or renamed here without a change of the ruleset
   gate:
     name: CI gate
     if: always()

@@ -19,14 +19,15 @@ The lint tools that run as Docker images (actionlint, Zizmor, ShellCheck, dotenv
 
 ## Required checks
 
-The ruleset `main` on the default branch requires a pull request with a merge commit, resolved review threads, signed commits, up to date branches, and no deletion or force push. It has no bypass actor. It requires four status checks, each pinned to GitHub Actions.
+The ruleset `main` on the default branch requires a pull request with a merge commit, resolved review threads, signed commits, up to date branches, and no deletion or force push. It has no bypass actor. It requires five status checks, each pinned to GitHub Actions.
 
 - Conventional commits
 - PR format
 - Config gate
 - Security gate
+- CI gate
 
-A check joins the ruleset after it has run once. `CI gate` and the `CodeQL` job are not required by name yet, because they have not run. After their first run on `main`, `CI gate` joins the list pinned to GitHub Actions, and `CodeQL` joins pinned to the app that reports it. The `CodeQL` result already blocks a merge through `Security gate`, which lists it in `needs`. Until `CI gate` is required, the Go jobs gate nothing, so read their results before a merge. The pre-commit.ci report and the code scanning results are not required.
+A check joins the ruleset after it has run once. The `CodeQL` job is not required by its own name, but its result blocks a merge through `Security gate`, which lists it in `needs`. The pre-commit.ci report and the code scanning results are not required.
 
 A second ruleset, `main-merge-and-approval`, requires one approving review and the approval of a code owner, and it allows only merge commits. It also has the rule `update`, so only the bypass team can merge into `main`. `.github/CODEOWNERS` names the owner. The team `mgm-inventaris-portal-maintainer` can bypass this second ruleset through a pull request, and it cannot bypass the first one. The bypass covers only the approval, the code owner review and the `update` rule. Signed commits, resolved threads, up to date branches and the required checks still apply to the team. A pull request from someone outside the team needs the approval of the owner. A pull request that changes only `go.mod`, `go.sum`, `CHANGELOG.md` or `.release-please-manifest.json` has no code owner, so it needs any one approval.
 
@@ -56,6 +57,5 @@ Renovate opens the pull requests through the Mend Renovate GitHub app, which an 
 
 ## Not set up yet
 
-- `CI gate` and `CodeQL` as required checks of the ruleset, after their first run.
 - A Dockerfile and the image build, scan and signing.
 - The vulnerability check for Go modules, the license check and the other workflows of the reference repositories.
