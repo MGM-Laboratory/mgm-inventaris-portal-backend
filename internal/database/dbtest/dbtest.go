@@ -82,6 +82,12 @@ func Empty(t *testing.T) string {
 
 	adminURL.Path = "/" + name
 
+	// a database or dbname parameter overrides the path in pgx, so the test would use the shared database
+	query := adminURL.Query()
+	query.Del("database")
+	query.Del("dbname")
+	adminURL.RawQuery = query.Encode()
+
 	return adminURL.String()
 }
 

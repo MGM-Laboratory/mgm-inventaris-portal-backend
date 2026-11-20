@@ -30,6 +30,7 @@ const (
 	lockTimeout            = "5s"
 	idleInTransactionLimit = "30s"
 	connectTimeout         = 5 * time.Second
+	migrationLockTimeout   = "120s"
 	pingTimeout            = 5 * time.Second
 	connectAttempts        = 10
 	connectWait            = 2 * time.Second
@@ -173,6 +174,8 @@ func newMigrator(url string) (*migrate.Migrate, error) {
 
 	cfg.ConnectTimeout = connectTimeout
 	cfg.RuntimeParams["application_name"] = "mgm-inventaris-migrate"
+	// the library waits on the advisory lock without a context, so the server ends a wait that no migration should need
+	cfg.RuntimeParams["lock_timeout"] = migrationLockTimeout
 
 	db := stdlib.OpenDB(*cfg)
 
