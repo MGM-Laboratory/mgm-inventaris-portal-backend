@@ -53,7 +53,7 @@ func Code(secret []byte, step int64) string {
 
 	binary.BigEndian.PutUint64(counter[:], uint64(step)) //nolint:gosec // a step of a real clock is never negative
 
-	mac := hmac.New(sha1.New, secret) //nolint:gosec // see the import
+	mac := hmac.New(sha1.New, secret)
 	mac.Write(counter[:])
 
 	sum := mac.Sum(nil)
