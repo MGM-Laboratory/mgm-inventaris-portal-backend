@@ -63,6 +63,12 @@ func NewAPI(cfg config.Config, deps Deps) *fiber.App {
 	app.Get("/api/session", RequireSession(), getSession())
 	app.Delete("/api/session", RequireSession(), deleteSession(cfg, deps))
 
+	app.Post("/api/admin/session", signInAdmin(cfg, deps))
+	app.Get("/api/admin/me", RequireAdmin(), getAdminMe(deps))
+	app.Post("/api/admin/me/password", RequireAdminAccount(), changeAdminPassword(cfg, deps))
+	app.Post("/api/admin/me/totp", RequireAdminAccount(), enrollAdminTotp(cfg, deps))
+	app.Post("/api/admin/me/recovery-codes", RequireAdmin(), renewAdminRecoveryCodes(cfg, deps))
+
 	return app
 }
 
