@@ -14,7 +14,7 @@ Status of this page. It describes the planned contract. The hand written `openap
 
 | Item | Value |
 | --- | --- |
-| Session cookie | `__Host-mgm_session`, `HttpOnly`, `Secure`, `SameSite=Lax`, path `/` |
+| Session cookie | `__Host-mgm_session`, `HttpOnly`, `Secure`, `SameSite=Lax`, path `/`. A development setup without `Secure` uses the name `mgm_session` |
 | Guest session | 12 hours idle, 7 days at most |
 | Admin session | 30 minutes idle, 8 hours at most |
 | CSRF header | `X-CSRF-Token` on every `POST`, `PATCH` and `DELETE` |

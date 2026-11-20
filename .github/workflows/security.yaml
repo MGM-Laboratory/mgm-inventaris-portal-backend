@@ -16,9 +16,36 @@ concurrency:
 
 permissions: {}
 
-# CodeQL is not part of this workflow yet. CodeQL for Go fails on a repository with no Go source, so the job is added together with
-# the Go code, and then it also joins the needs list of the Security gate.
 jobs:
+  codeql:
+    name: CodeQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          languages: go
+          build-mode: autobuild
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          category: "/language:go"
+
   dependency-review:
     name: Dependency review
     if: github.event_name == 'pull_request'
@@ -143,13 +170,14 @@ jobs:
   gate:
     name: Security gate
     if: always()
-    needs: [dependency-review, secret-scan, trivy-fs]
+    needs: [codeql, dependency-review, secret-scan, trivy-fs]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
     steps:
+      # Only the dependency review may be skipped, because it runs on pull requests alone
       - name: Require selected checks
         env:
           RESULTS: ${{ toJSON(needs) }}
         run: |
-          node -e 'const jobs = JSON.parse(process.env.RESULTS); if (Object.values(jobs).some(j => !["success", "skipped"].includes(j.result))) process.exit(1)'
+          node -e 'const jobs = JSON.parse(process.env.RESULTS); if (Object.entries(jobs).some(([name, j]) => j.result !== "success" && !(name === "dependency-review" && j.result === "skipped"))) process.exit(1)'

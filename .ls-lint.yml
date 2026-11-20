@@ -43,6 +43,13 @@ ls:
   docs/*/*:
     <<: [*shared, *yaml-ban]
 
+  # a golang-migrate file is a four digit number, an underscore, a title, and .up.sql or .down.sql. The title is lowercase words
+  # joined by underscores, which the kebab case rule of the shared rules would refuse.
+  internal/database/migrations:
+    <<: [*shared, *yaml-ban]
+    .up.sql: regex:[0-9]{4}_[a-z0-9]+(_[a-z0-9]+)*
+    .down.sql: regex:[0-9]{4}_[a-z0-9]+(_[a-z0-9]+)*
+
   # a workflow ends with .yaml and not .yml, and the same holds for a name with more dots such as check.config.yml
   .github/workflows:
     <<: *shared

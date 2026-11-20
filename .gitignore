@@ -37,3 +37,6 @@ bin/
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# scratch copies that an agent makes
+.claude/worktrees/

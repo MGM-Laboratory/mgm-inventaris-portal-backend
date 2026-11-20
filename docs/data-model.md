@@ -1,6 +1,6 @@
 # Data model
 
-Status of this page. It describes the planned schema. The migrations are not written yet, so the code is the source of truth once it exists, and this page is updated in the same pull request as any migration.
+Status of this page. It describes the planned schema. The first migration is written, and the files in `internal/database/migrations` are the source of truth. This page is updated in the same pull request as any migration.
 
 All tables live in one PostgreSQL database. Ids are UUIDs made by the service. Timestamps are `timestamptz` and are stored in UTC. A pickup date is a plain `date` and is read as a date in the time zone Asia/Jakarta.
 
@@ -8,10 +8,10 @@ All tables live in one PostgreSQL database. Ids are UUIDs made by the service. T
 
 | Table | Purpose | Main columns |
 | --- | --- | --- |
-| `categories` | Groups of models | `id`, `name` (unique), `tone` |
-| `models` | A kind of item, such as a headset | `id`, `name` (unique), `category_id`, `description`, `prefix` (unique), `next_unit_number`, `retired_at` |
-| `units` | One physical item with a QR label | `id`, `tag` (unique), `model_id`, `serial` (unique, may be null), `condition`, `place`, `lifecycle`, `lifecycle_note` |
-| `unit_events` | History of a unit | `id`, `unit_id`, `at`, `action`, `admin_id`, `note` |
+| `categories` | Groups of models | `id`, `name` (unique), `tone`, `created_at` |
+| `models` | A kind of item, such as a headset | `id`, `name` (unique), `category_id`, `description`, `prefix` (unique), `next_unit_number`, `retired_at`, `created_at` |
+| `units` | One physical item with a QR label | `id`, `tag` (unique), `model_id`, `serial` (unique, may be null), `condition`, `place`, `lifecycle`, `lifecycle_note`, `created_at` |
+| `unit_events` | History of a unit | `id`, `unit_id`, `at`, `action`, `admin_id`, `ticket_id` (null unless a handover or a return), `note` |
 
 - `tag` has the form `MGM-<prefix>-<nnn>`. The QR label holds the tag, so a tag never changes and is never reused.
 - `next_unit_number` is increased inside the same transaction that inserts the units. The model row is locked first, so two admins never get the same number.
@@ -42,7 +42,7 @@ All tables live in one PostgreSQL database. Ids are UUIDs made by the service. T
 - A partial unique index on `ticket_units (unit_id) where returned_at is null` makes it impossible that two open tickets hold the same unit.
 - A ticket asks for models. The units are chosen at handover, when the admin scans the QR label of each unit.
 - An open ticket, for the limit of open tickets, is a ticket in the status `diajukan`, `disetujui`, `siap_diambil` or `dipinjam`.
-- Indexes cover the lookups that the routes make. They are `tickets (number)`, `tickets (status, created_at)`, `tickets (lower(requester_email))`, `tickets (requester_nim_nip)`, `ticket_units (ticket_id)` and `units (model_id)`.
+- Indexes cover the lookups that the routes make, and the migration lists every one of them. The unique constraint on `tickets (number)` and the start of the primary key of `ticket_units` already serve those two lookups.
 
 ## Stock rules
 
@@ -72,7 +72,7 @@ All tables live in one PostgreSQL database. Ids are UUIDs made by the service. T
 
 | Table | Purpose | Main columns |
 | --- | --- | --- |
-| `admins` | Local admin accounts | `id`, `email` (unique), `name`, `password_hash`, `password_expires_at`, `totp_secret`, `totp_enabled_at`, `totp_last_step` |
+| `admins` | Local admin accounts | `id`, `email` (unique), `name`, `password_hash`, `password_expires_at`, `totp_secret`, `totp_enabled_at`, `totp_last_step`, `created_at` |
 | `admin_recovery_codes` | One use codes for TOTP | `admin_id`, `code_hash`, `used_at` |
 | `sessions` | Guest and admin sessions, `kind` is `guest`, `admin` or `admin_setup` | `token_hash` (primary key), `kind`, `admin_id`, `guest_name`, `guest_nim_nip`, `guest_email`, `csrf_token`, `viewable_tickets`, `created_at`, `last_seen_at`, `expires_at` |
 | `rate_counters` | Fixed window counters | `key`, `window_start`, `count` |

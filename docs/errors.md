@@ -6,7 +6,7 @@ Every error answer has the body described in [`api.md`](api.md). The field `code
 
 | Code | Status | Cause | What a client does |
 | --- | --- | --- | --- |
-| `bad_request` | 400 | The body is not valid JSON or a size limit is over | Fix the request |
+| `bad_request` | 400 | The body is not valid JSON or a size limit is over. A request that the web framework refuses keeps its own 4xx status with this code, for example 405, 408, 413, 414 or 431 | Fix the request |
 | `unauthenticated` | 401 | The route needs a session and the request has none | Show the sign in page |
 | `session_expired` | 401 | The session reached its idle or absolute limit | Show the sign in page |
 | `invalid_credentials` | 401 | The email, the password or the code is wrong | Show one message for all of them, so the answer does not reveal which one is wrong |

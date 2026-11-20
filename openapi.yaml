@@ -57,7 +57,7 @@ paths:
       security: []
       servers:
         - url: http://{address}
-          description: The internal address of one copy of the service. It is not under `/api` and the proxy does not route it. The address is a placeholder until the service sets it.
+          description: The internal address of one copy of the service. It is not under `/api` and the proxy does not route it. The service listens on the address of the setting `HEALTH_ADDR`, which is `127.0.0.1:8081` by default.
           variables:
             address:
               default: 127.0.0.1:8081
@@ -81,7 +81,7 @@ paths:
       security: []
       servers:
         - url: http://{address}
-          description: The internal address of one copy of the service. It is not under `/api` and the proxy does not route it. The address is a placeholder until the service sets it.
+          description: The internal address of one copy of the service. It is not under `/api` and the proxy does not route it. The service listens on the address of the setting `HEALTH_ADDR`, which is `127.0.0.1:8081` by default.
           variables:
             address:
               default: 127.0.0.1:8081

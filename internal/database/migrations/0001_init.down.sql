@@ -1,0 +1,15 @@
+drop table if exists audit_log;
+drop table if exists idempotency_keys;
+drop table if exists rate_counters;
+drop table if exists sessions;
+drop table if exists ticket_counters;
+drop table if exists ticket_history;
+drop table if exists ticket_units;
+drop table if exists ticket_items;
+drop table if exists unit_events;
+drop table if exists tickets;
+drop table if exists units;
+drop table if exists models;
+drop table if exists categories;
+drop table if exists admin_recovery_codes;
+drop table if exists admins;

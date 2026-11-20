@@ -1,6 +1,6 @@
 # Contributing to the LabMGM inventory portal backend
 
-Thanks for taking the time to contribute. This repository is the backend of the LabMGM inventory portal, written in Go with PostgreSQL. It has no service code yet. Read `README.md` for what exists today.
+Thanks for taking the time to contribute. This repository is the backend of the LabMGM inventory portal, written in Go with PostgreSQL. The service is at its first skeleton, so read `README.md` for what exists today.
 
 ## Before you change code
 
@@ -27,15 +27,24 @@ Every pull request runs the checks below. The ruleset of the repository requires
 
 - **Conventional commits** reads every commit message and the title of the pull request.
 - **PR format** reads the branch name, the label, the assignee and the body.
-- **Config gate** runs actionlint, Zizmor, ShellCheck, ls-lint for file names, the Renovate validator and the Redocly lint of `openapi.yaml`.
-- **Security gate** summarizes dependency review, gitleaks and a Trivy filesystem scan. Dependency review fails on a finding of severity high or above, and gitleaks fails on any finding. Trivy fails on a CRITICAL or HIGH finding and also sends its findings to code scanning. For a pull request from a fork, the Trivy findings are not uploaded to code scanning, because a fork token cannot write there. They are kept for 7 days as the artifact `trivy-fs-results` of the run, and the check still fails on a CRITICAL or HIGH finding.
+- **Config gate** runs actionlint, Zizmor, ShellCheck, dotenv-linter for `.env.example`, ls-lint for file names, the Renovate validator and the Redocly lint of `openapi.yaml`.
+- **CI gate** summarizes the Go jobs, which are `Go build and vet`, `Go lint` and `Go test`. The ruleset does not require it yet, see `docs/ci-cd.md`.
+- **Security gate** summarizes CodeQL for Go, dependency review, gitleaks and a Trivy filesystem scan. Dependency review fails on a finding of severity high or above, and gitleaks fails on any finding. Trivy fails on a CRITICAL or HIGH finding and also sends its findings to code scanning. For a pull request from a fork, the Trivy findings are not uploaded to code scanning, because a fork token cannot write there. They are kept for 7 days as the artifact `trivy-fs-results` of the run, and the check still fails on a CRITICAL or HIGH finding.
 - **pre-commit.ci** is not required by the ruleset, but its report should be clean. It runs repository hygiene checks on every pull request and does not push a fix.
 
 A commit message or a title that does not follow Conventional Commits blocks the merge. To revert a change, write the title as `revert: <summary>`, because the default title that the GitHub revert button makes is rejected. A lint warning or a deprecation notice in the output of a check is still something to fix before the pull request is done, even when it does not turn the check red.
 
 ## Go checks
 
-The Go code is not written yet, so no Go check runs today. The Go checks join CI in the same pull request that adds the Go code, and this page is updated then. Run them through CI. When a failure needs a local run to explain it, use `go test ./path/to/package` for a single package and not the whole suite.
+The workflow `CI` runs the Go checks on every pull request, and `CodeQL` runs in the workflow `Security`.
+
+- `Go build and vet` runs `go build ./...` and `go vet ./...`.
+- `Go lint` checks `gofmt`, checks that `go.mod` and `go.sum` are tidy and runs golangci-lint with `.golangci.yml`.
+- `Go test` runs `go test ./... -race` against a PostgreSQL 17 service and sends the coverage to Codecov.
+
+The database tests read `DATABASE_URL`. They make a database of their own on that server and drop it at the end, so point it at a throwaway server only. Without `DATABASE_URL` they skip, and in CI a missing value fails them, so a run can never pass with every database test skipped. Name Go files in lowercase with no separator, such as `errormap.go`, because ls-lint refuses an underscore there. Only `_test` may follow the name. A migration is a pair of files named `NNNN_title.up.sql` and `NNNN_title.down.sql`, and a change to the schema updates `docs/data-model.md` in the same pull request.
+
+Run the checks through CI. When a failure needs a local run to explain it, use `go test ./path/to/package` for a single package and not the whole suite.
 
 ## Commit messages
 
