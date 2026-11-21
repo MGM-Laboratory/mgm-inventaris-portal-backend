@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 )
 
 // KeyLength is the length of the master key in bytes.
@@ -53,20 +54,28 @@ func subkey(master []byte, label string) []byte {
 	return mac.Sum(nil)
 }
 
-// Seal encrypts plaintext with AES-256-GCM and returns Base64 text. The context is authenticated and not stored, so a value that
-// was sealed for one row does not open for another.
+// sealPrefix names the format of a sealed value, so a later format can live next to this one in the same column.
+const sealPrefix = "v1."
+
+// Seal encrypts plaintext with AES-256-GCM and returns text that starts with the format prefix and then holds Base64. The context is
+// authenticated and not stored, so a value that was sealed for one row does not open for another.
 func (b *Box) Seal(plaintext, context []byte) (string, error) {
 	nonce := make([]byte, b.aead.NonceSize())
 	if _, err := rand.Read(nonce); err != nil {
 		return "", fmt.Errorf("make the nonce %w", err)
 	}
 
-	return base64.StdEncoding.EncodeToString(b.aead.Seal(nonce, nonce, plaintext, context)), nil
+	return sealPrefix + base64.StdEncoding.EncodeToString(b.aead.Seal(nonce, nonce, plaintext, context)), nil
 }
 
 // Open decrypts the text that Seal returned for the same context.
 func (b *Box) Open(sealed string, context []byte) ([]byte, error) {
-	raw, err := base64.StdEncoding.DecodeString(sealed)
+	encoded, found := strings.CutPrefix(sealed, sealPrefix)
+	if !found {
+		return nil, ErrOpen
+	}
+
+	raw, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil || len(raw) < b.aead.NonceSize()+b.aead.Overhead() {
 		return nil, ErrOpen
 	}
