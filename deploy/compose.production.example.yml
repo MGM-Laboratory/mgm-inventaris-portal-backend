@@ -1,0 +1,119 @@
+# Production example for the inventory portal, two copies of the API and two copies of the web app on one host behind a reverse
+# proxy. Copy this file to the folder ~/docker/inventaris on the host as compose.yml, copy .env.example to .env next to it and fill
+# it in, and update the copies with rolling-update.sh. The copies listen only on the loopback address of the host, so nothing reaches
+# them except a reverse proxy on the same host. See docs/deployment.md.
+#
+# The host ports and the image tags have no default on purpose. Compose stops with a message until they are set in .env, because
+# the free ports on the host differ and a wrong default would clash with another app.
+#
+# This stack has no volume. The only state is the database, which runs in the shared database container of the host. The rule that
+# volumes live under ~/docker-volume/<name> therefore has nothing to apply to here.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "${LOG_MAX_SIZE:-10m}"
+    max-file: "${LOG_MAX_FILES:-5}"
+
+x-api: &api
+  image: ${API_IMAGE:-ghcr.io/mgm-laboratory/mgm-inventaris-portal-backend}:${API_IMAGE_TAG:?set API_IMAGE_TAG in the env file}
+  restart: always
+  # The service stops accepting requests on a stop signal, waits 3 seconds so the proxy sees the change, and then lets the requests that
+  # run finish for up to 15 seconds. Docker stops a container after 10 seconds when nothing is set, so the value here is longer.
+  stop_grace_period: ${API_STOP_GRACE_PERIOD:-30s}
+  # The reaper of Docker takes the role of process 1, so a stop signal and the end of a child process are handled as they should be
+  init: true
+  # Only the API loads the env file, because it is the only part that needs the database URL and the key of the TOTP secrets. The web
+  # copies get no env_file and receive only the names listed under their own environment. A second file for the API alone would
+  # split one set of settings over two places, and rolling-update.sh would have to check both. The service reads only the
+  # names it knows, so the other lines of the file (ports, tags, limits) do no harm in the container. A missing .env stops compose,
+  # because the file is required unless the entry says otherwise.
+  env_file:
+    - .env
+  networks:
+    - internal
+    - database
+  read_only: true
+  tmpfs:
+    - /tmp:size=16m,mode=1777
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  # The image has the same check. It is repeated here so the state of a copy does not depend on the image that was pulled.
+  healthcheck:
+    test: ["CMD", "/api", "healthcheck"]
+    interval: 10s
+    timeout: 5s
+    retries: 3
+    start_period: 30s
+  logging: *default-logging
+  deploy:
+    resources:
+      limits:
+        cpus: "${API_CPUS:-1.00}"
+        memory: ${API_MEMORY_LIMIT:-256m}
+
+x-web: &web
+  image: ${WEB_IMAGE:-ghcr.io/mgm-laboratory/mgm-inventaris-portal-frontend}:${WEB_IMAGE_TAG:?set WEB_IMAGE_TAG in the env file}
+  restart: always
+  stop_grace_period: ${WEB_STOP_GRACE_PERIOD:-20s}
+  init: true
+  # The web app gets only what it needs and never the database settings, so it has no env_file. The image sets the port and the
+  # address that it listens on. Add a name here when the frontend starts to read a setting at run time.
+  environment:
+    - NODE_ENV=production
+  networks:
+    - internal
+  read_only: true
+  tmpfs:
+    - /tmp:size=64m,mode=1777
+    # the fetch cache and the image optimizer of Next.js write here, and the image runs as the user 1001
+    - /app/.next/cache:size=${WEB_CACHE_SIZE:-256m},uid=1001,gid=1001
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  healthcheck:
+    test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+    interval: 10s
+    timeout: 5s
+    retries: 3
+    start_period: 20s
+  logging: *default-logging
+  deploy:
+    resources:
+      limits:
+        cpus: "${WEB_CPUS:-1.00}"
+        memory: ${WEB_MEMORY_LIMIT:-512m}
+
+services:
+  api-1:
+    <<: *api
+    container_name: inventaris-api-1
+    ports:
+      - "127.0.0.1:${API_PORT_1:?set API_PORT_1 in the env file}:8080"
+
+  api-2:
+    <<: *api
+    container_name: inventaris-api-2
+    ports:
+      - "127.0.0.1:${API_PORT_2:?set API_PORT_2 in the env file}:8080"
+
+  web-1:
+    <<: *web
+    container_name: inventaris-web-1
+    ports:
+      - "127.0.0.1:${WEB_PORT_1:?set WEB_PORT_1 in the env file}:3000"
+
+  web-2:
+    <<: *web
+    container_name: inventaris-web-2
+    ports:
+      - "127.0.0.1:${WEB_PORT_2:?set WEB_PORT_2 in the env file}:3000"
+
+networks:
+  internal:
+  # the network of the shared database container, which already exists on the host. Compose never creates or removes it.
+  database:
+    external: true
+    name: ${DB_NETWORK:-postgres_postgres}
