@@ -42,6 +42,12 @@ ls:
     <<: [*shared, *yaml-ban]
   docs/*/*:
     <<: [*shared, *yaml-ban]
+  # the production example of the compose file, the settings template and the update script. Dockerfile has no extension, and
+  # compose.production.example.yml and rolling-update.sh follow the shared rules, so this folder needs no exception of its own.
+  deploy:
+    <<: [*shared, *yaml-ban]
+  deploy/*:
+    <<: [*shared, *yaml-ban]
 
   # a golang-migrate file is a four digit number, an underscore, a title, and .up.sql or .down.sql. The title is lowercase words
   # joined by underscores, which the kebab case rule of the shared rules would refuse.

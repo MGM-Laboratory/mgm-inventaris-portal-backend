@@ -46,6 +46,26 @@
       "groupName": "Lint tool images"
     },
     {
+      "description": "the Go release is raised by hand in go.mod, and the build image has to follow it, so a patch release of the go directive is a decision and not a bot update",
+      "matchDatasources": ["golang-version"],
+      "enabled": false
+    },
+    {
+      "description": "a new minor or major Go image needs a matching go directive in go.mod, so it waits for approval on the dependency dashboard",
+      "matchManagers": ["dockerfile"],
+      "matchFileNames": ["Dockerfile"],
+      "matchPackageNames": ["golang"],
+      "matchUpdateTypes": ["major", "minor"],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "digest and patch updates of the base images of the service image arrive in one pull request",
+      "matchManagers": ["dockerfile"],
+      "matchFileNames": ["Dockerfile"],
+      "matchUpdateTypes": ["minor", "patch", "digest", "pin"],
+      "groupName": "Image base images"
+    },
+    {
       "matchManagers": ["github-actions"],
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "GitHub Actions"
