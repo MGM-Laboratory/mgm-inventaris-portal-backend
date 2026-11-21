@@ -60,6 +60,29 @@ jobs:
           docker run --rm -e GH_TOKEN -v "$PWD:/repo" -w /repo "$(bash ./.github/tools/image.sh zizmor)" \
             --no-progress --format github .
 
+  hadolint:
+    name: Hadolint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Pull images through the Google mirror
+        uses: ./.github/actions/pull-images
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          token: ${{ secrets.DOCKERHUB_PULL_TOKEN }}
+
+      # The image is the hadolint stage of .github/tools/Dockerfile, which the update bot keeps current
+      - name: Lint the Dockerfile
+        run: |
+          docker run --rm -i "$(bash ./.github/actions/pull-images/pull.sh "$(bash ./.github/tools/image.sh hadolint)")" < Dockerfile
+
   shellcheck:
     name: ShellCheck
     runs-on: ubuntu-latest
@@ -107,11 +130,36 @@ jobs:
           username: ${{ vars.DOCKERHUB_USERNAME }}
           token: ${{ secrets.DOCKERHUB_PULL_TOKEN }}
 
-      # The example file is grouped by topic and not sorted, so the check for the order of the keys is off
-      - name: Lint the example env file
+      # The example files are grouped by topic and not sorted, so the check for the order of the keys is off
+      - name: Lint the example env files
         run: |
           docker run --rm -v "$PWD:/app:ro" -w /app "$(bash ./.github/actions/pull-images/pull.sh "$(bash ./.github/tools/image.sh dotenv-linter)")" \
-            check --skip-updates --plain --ignore-checks UnorderedKey .env.example
+            check --skip-updates --plain --ignore-checks UnorderedKey .env.example deploy/.env.example
+
+  compose:
+    name: Compose config
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # docker compose config reads the file and builds nothing and starts nothing. The copy of the example file lets compose read the
+      # settings that have a default. The ports and the tags have none, so the first run must fail and the second run gets them
+      # from the shell, which is the point of the check.
+      - name: Check the compose file
+        run: |
+          cp deploy/.env.example deploy/.env
+          if docker compose -f deploy/compose.production.example.yml config --quiet 2> /dev/null; then
+            echo "The compose file starts without the ports and the tags, so it can clash with another app" >&2
+            exit 1
+          fi
+          API_IMAGE_TAG=0.0.0 WEB_IMAGE_TAG=0.0.0 API_PORT_1=4001 API_PORT_2=4002 WEB_PORT_1=3001 WEB_PORT_2=3002 \
+            docker compose -f deploy/compose.production.example.yml config --quiet
 
   names:
     name: File names
@@ -193,7 +241,7 @@ jobs:
   gate:
     name: Config gate
     if: always()
-    needs: [actionlint, zizmor, shellcheck, dotenv, names, renovate, openapi]
+    needs: [actionlint, zizmor, hadolint, shellcheck, dotenv, compose, names, renovate, openapi]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}

@@ -17,6 +17,7 @@ The backend of the LabMGM inventory portal, written in Go with PostgreSQL. The f
 ## Stack
 
 - Go 1.27, Fiber v3, pgx v5 and PostgreSQL 17, with golang-migrate for the schema.
+- A container image for linux/amd64 and linux/arm64 on a distroless base, published to GitHub Container Registry as `ghcr.io/mgm-laboratory/mgm-inventaris-portal-backend`. See [`docs/deployment.md`](docs/deployment.md).
 - CI, release automation and dependency updates on GitHub Actions, Release Please and Renovate. See [`docs/ci-cd.md`](docs/ci-cd.md).
 
 ## Quick start
@@ -82,6 +83,7 @@ The service reads these environment variables at start. A bad value stops the st
 ## Documentation
 
 - [`docs/ci-cd.md`](docs/ci-cd.md) lists the workflows, the required checks and the release flow.
+- [`docs/deployment.md`](docs/deployment.md) describes the images, the files of `deploy/`, the settings of a first start and the rolling update of the copies.
 - [`openapi.yaml`](openapi.yaml) is the full contract of the API, with every route, body, answer and error code.
 - [`docs/architecture.md`](docs/architecture.md), [`docs/data-model.md`](docs/data-model.md), [`docs/api.md`](docs/api.md) and [`docs/errors.md`](docs/errors.md) describe the planned design, the stock rules, the contract rules and the error codes.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`SECURITY.md`](SECURITY.md) hold the rules for contributions and for reporting a vulnerability.
@@ -89,9 +91,11 @@ The service reads these environment variables at start. A bad value stops the st
 ## Project layout
 
 ```text
-cmd/api/          The entry point of the service
+cmd/api/          The entry point of the service, with the commands create-admin, reset-totp and healthcheck
 internal/         The settings, the HTTP servers, the sessions, the admin accounts, the password, TOTP and secret encryption code, the rate limits, the janitor, the database pool, the migrations and the test helpers
-docs/             Design pages and CI/CD documentation
+docs/             Design pages, CI/CD documentation and the deployment guide
+deploy/           The production example of the compose file, its settings template and the rolling update script
+Dockerfile        The image of the service
 .github/          Workflows, the lint tool images, issue forms and the pull request template
 ```
 

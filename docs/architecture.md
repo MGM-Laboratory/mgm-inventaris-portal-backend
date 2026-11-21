@@ -30,7 +30,7 @@ The backend of the LabMGM inventory portal keeps the loan records of the lab. A 
 The folders below exist today.
 
 ```
-cmd/api                       the entry point and the commands create-admin and reset-totp
+cmd/api                       the entry point and the commands create-admin, reset-totp and healthcheck
 internal/config               settings from the environment
 internal/admin                admin accounts, sign in checks, TOTP enrollment, recovery codes
 internal/admin/admintest      an in-memory admin repository for tests
@@ -71,4 +71,4 @@ Stock rules need locks, because two admins can work on the same model at the sam
 
 ## Deployment
 
-The service runs as two copies behind the reverse proxy on one host, with the PostgreSQL database in a separate container. The health routes listen on an internal port that the proxy does not route. A rolling update replaces one copy at a time and waits for its health check.
+The service runs as two copies behind the reverse proxy on one host, with the PostgreSQL database in a separate container. The health routes listen on an internal port that the proxy does not route. The image has no shell, so its health check is the command `api healthcheck`, which asks `GET /healthz` on that port from inside the container. A rolling update replaces one copy at a time and waits for its health check. See [`deployment.md`](deployment.md).
