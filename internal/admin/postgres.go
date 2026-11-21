@@ -217,3 +217,26 @@ func (p *Postgres) ReplaceRecoveryCodes(ctx context.Context, id string, hashes [
 		return replaceCodes(ctx, tx, id, hashes)
 	})
 }
+
+func (p *Postgres) ResetTOTP(ctx context.Context, id string) error {
+	return p.inTx(ctx, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `update admins set totp_secret = null, totp_enabled_at = null, totp_last_step = null where id = $1::uuid`, id)
+		if err != nil {
+			return fmt.Errorf("clear the TOTP secret %w", err)
+		}
+
+		if tag.RowsAffected() != 1 {
+			return ErrNotFound
+		}
+
+		if _, err := tx.Exec(ctx, `delete from admin_recovery_codes where admin_id = $1::uuid`, id); err != nil {
+			return fmt.Errorf("delete the recovery codes %w", err)
+		}
+
+		if _, err := session.DeleteOthers(ctx, tx, id, nil); err != nil {
+			return fmt.Errorf("end the sessions %w", err)
+		}
+
+		return nil
+	})
+}

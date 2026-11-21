@@ -75,4 +75,8 @@ type Repository interface {
 	UseRecoveryCode(ctx context.Context, id, hash string, at time.Time) (bool, error)
 	// ReplaceRecoveryCodes deletes every code of the admin and stores the new hashes in one transaction.
 	ReplaceRecoveryCodes(ctx context.Context, id string, hashes []string) error
+
+	// ResetTOTP removes the secret, the enrollment time and the last step, deletes the recovery codes and ends every session of the
+	// admin, in one transaction. The password stays, so the next sign in gets a setup session that enrolls a new factor.
+	ResetTOTP(ctx context.Context, id string) error
 }

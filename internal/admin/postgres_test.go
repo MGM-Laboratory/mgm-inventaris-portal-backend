@@ -534,3 +534,61 @@ func TestACanceledPasswordChangeChangesNothing(t *testing.T) {
 		t.Fatalf("the canceled call changed the admin %+v", account)
 	}
 }
+
+func TestResetTOTPClearsTheFactorTheCodesAndTheSessionsOfOneAdmin(t *testing.T) {
+	f := newDBFixture(t)
+	ctx := context.Background()
+
+	id := f.create(t, "admin@example.org")
+	otherID := f.create(t, "other@example.org")
+
+	_, hashes, err := admin.NewRecoveryCodes(10)
+	if err != nil {
+		t.Fatalf("make failed %v", err)
+	}
+
+	if stored, err := f.repo.EnableTOTP(ctx, id, nil, "sealed one", f.clock.Now(), 5, hashes); err != nil || !stored {
+		t.Fatalf("enable gave %v and %v", stored, err)
+	}
+
+	who := session.Admin{ID: id, Name: "Example Admin", Email: "admin@example.org"}
+	if _, _, err := f.sessions.CreateAdmin(ctx, who, session.KindAdmin, nil, false); err != nil {
+		t.Fatalf("create failed %v", err)
+	}
+
+	if _, _, err := f.sessions.CreateAdmin(ctx, session.Admin{ID: otherID, Name: "Other", Email: "other@example.org"}, session.KindAdmin, nil, false); err != nil {
+		t.Fatalf("create failed %v", err)
+	}
+
+	got, err := f.svc.ResetTOTP(ctx, " Admin@Example.org ")
+	if err != nil || got != id {
+		t.Fatalf("reset gave %q and %v", got, err)
+	}
+
+	acct, err := f.repo.ByID(ctx, id)
+	if err != nil || acct.TOTPEnabled() || acct.TOTPSecret != "" || acct.TOTPLastStep != nil {
+		t.Fatalf("the factor is still there %+v and %v", acct, err)
+	}
+
+	if n := f.count(t, `select count(*) from admin_recovery_codes where admin_id = $1::uuid`, id); n != 0 {
+		t.Fatalf("%d recovery codes are left", n)
+	}
+
+	if n := f.count(t, `select count(*) from sessions where admin_id = $1::uuid`, id); n != 0 {
+		t.Fatalf("%d sessions are left", n)
+	}
+
+	if n := f.count(t, `select count(*) from sessions where admin_id = $1::uuid`, otherID); n != 1 {
+		t.Fatalf("the other admin has %d sessions, want 1", n)
+	}
+
+	// the password still works and now leads to a setup session that enrolls a new factor
+	signIn, err := f.svc.SignIn(ctx, admin.SignInInput{Email: "admin@example.org", Password: initialPassword})
+	if err != nil || !signIn.Setup {
+		t.Fatalf("the sign in after the reset gave %+v and %v", signIn, err)
+	}
+
+	if _, err := f.svc.ResetTOTP(ctx, "nobody@example.org"); !errors.Is(err, admin.ErrNotFound) {
+		t.Fatalf("an unknown email gave %v", err)
+	}
+}
