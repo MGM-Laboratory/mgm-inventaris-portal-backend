@@ -68,6 +68,7 @@ jobs:
             type=semver,pattern={{version}}
           labels: |
             org.opencontainers.image.licenses=GPL-3.0-only
+            org.opencontainers.image.description=The backend of the LabMGM inventory portal
 
       - name: Login to GitHub Container Registry
         if: env.PUSH == 'true'
@@ -243,8 +244,8 @@ jobs:
             echo "$arch=$digest" >> "$GITHUB_OUTPUT"
           done
 
-      # The scan fails the job for a HIGH or CRITICAL finding that has a fixed version. A finding with no fix does not fail it,
-      # and it still goes to code scanning. The image already holds its tags at this point, but it gets no signature, so the
+      # The scan fails the job for a HIGH or CRITICAL finding that has a fixed version. A finding with no fix does not fail it
+      # and is not reported. Only a HIGH or CRITICAL finding with a fix goes to code scanning. The image already holds its tags at this point, but it gets no signature, so the
       # Docker Hub mirror never copies it.
       - name: Trivy image scan (amd64)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
