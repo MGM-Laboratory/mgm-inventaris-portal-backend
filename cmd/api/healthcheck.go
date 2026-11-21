@@ -23,7 +23,7 @@ const (
 // shell and no curl, so the Docker health check runs this command. It prints only the reason of a failure and never a body.
 func runHealthcheck(args []string, addr string, timeout time.Duration, stderr io.Writer) int {
 	if len(args) > 0 {
-		_, _ = fmt.Fprintf(stderr, "healthcheck takes no argument\n%s", usage)
+		_, _ = fmt.Fprintf(stderr, "healthcheck takes no argument\n%s", commands)
 
 		return 2
 	}
