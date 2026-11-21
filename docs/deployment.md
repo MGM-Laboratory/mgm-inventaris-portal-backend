@@ -19,7 +19,7 @@ The backend image holds one static Go binary at `/api` on a distroless base, and
 
 ## How the copies are laid out
 
-- Every copy has a fixed name and its own host port. The ports listen on the loopback address of the host, so only a reverse proxy on the same host reaches them.
+- Every copy has a fixed name and its own host port. The ports listen on the address of `API_BIND` and `WEB_BIND`, which is the loopback address by default, so only a reverse proxy on the same host reaches them. A proxy on another host needs the address of the network interface that it reaches.
 - The four host ports are settings with no default (`API_PORT_1`, `API_PORT_2`, `WEB_PORT_1` and `WEB_PORT_2`). Compose stops with a message until all four are set, so a copy never takes a port that another app uses by chance. The image tags are settings with no default too (`API_IMAGE_TAG` and `WEB_IMAGE_TAG`).
 - The backend copies load the whole `.env` as their environment. The frontend copies get no `env_file`, so they never see the database URL or the key of the TOTP secrets.
 - The database is a separate container that other apps may share. The backend copies join its Docker network, which has to exist already. Compose never creates or removes it. The name is `DB_NETWORK`, which is `postgres_postgres` by default.
@@ -110,5 +110,5 @@ When a compose file or an env file is edited by hand, keep the old one next to i
 - The name of the database container, the host name that `DATABASE_URL` needs on the network `DB_NETWORK`, and the name of the database and its user on the host.
 - The address that a backend copy sees as the peer of a request that comes through the proxy, which decides the right value of `TRUSTED_PROXIES`.
 - Whether the package of each image on GitHub Container Registry is public. A package starts private, and the host needs a login with a token that can read it until the visibility is changed.
-- The first run of the workflows `Docker`, `Docker Hub mirror`, `Re-sign image` and `Repeatable build` on `main`. They were written from the reference repository and have not run in this repository yet.
+- The arm64 build, the run of `Docker` on `main`, the version tag path, the workflow `Docker Hub mirror` and the manual `Re-sign image`. The amd64 build, the scan, the signature and `Repeatable build` ran on a pull request.
 - The frontend side. The compose file assumes that the image listens on 3000 with the route `/healthz`, that it needs no run time setting and that it writes only to `/tmp` and `/app/.next/cache`.

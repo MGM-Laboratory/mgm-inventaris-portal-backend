@@ -1,7 +1,7 @@
 # Production example for the inventory portal, two copies of the API and two copies of the web app on one host behind a reverse
 # proxy. Copy this file to the folder ~/docker/inventaris on the host as compose.yml, copy .env.example to .env next to it and fill
-# it in, and update the copies with rolling-update.sh. The copies listen only on the loopback address of the host, so nothing reaches
-# them except a reverse proxy on the same host. See docs/deployment.md.
+# it in, and update the copies with rolling-update.sh. The copies listen on the address of API_BIND and WEB_BIND, which is the loopback address by
+# default, so nothing reaches them except a reverse proxy on the same host. A proxy on another host needs another address. See docs/deployment.md.
 #
 # The host ports and the image tags have no default on purpose. Compose stops with a message until they are set in .env, because
 # the free ports on the host differ and a wrong default would clash with another app.
@@ -91,25 +91,25 @@ services:
     <<: *api
     container_name: inventaris-api-1
     ports:
-      - "127.0.0.1:${API_PORT_1:?set API_PORT_1 in the env file}:8080"
+      - "${API_BIND:-127.0.0.1}:${API_PORT_1:?set API_PORT_1 in the env file}:8080"
 
   api-2:
     <<: *api
     container_name: inventaris-api-2
     ports:
-      - "127.0.0.1:${API_PORT_2:?set API_PORT_2 in the env file}:8080"
+      - "${API_BIND:-127.0.0.1}:${API_PORT_2:?set API_PORT_2 in the env file}:8080"
 
   web-1:
     <<: *web
     container_name: inventaris-web-1
     ports:
-      - "127.0.0.1:${WEB_PORT_1:?set WEB_PORT_1 in the env file}:3000"
+      - "${WEB_BIND:-127.0.0.1}:${WEB_PORT_1:?set WEB_PORT_1 in the env file}:3000"
 
   web-2:
     <<: *web
     container_name: inventaris-web-2
     ports:
-      - "127.0.0.1:${WEB_PORT_2:?set WEB_PORT_2 in the env file}:3000"
+      - "${WEB_BIND:-127.0.0.1}:${WEB_PORT_2:?set WEB_PORT_2 in the env file}:3000"
 
 networks:
   internal:
