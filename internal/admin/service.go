@@ -430,6 +430,25 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (string, string, e
 	return id, email, nil
 }
 
+// ResetTOTP removes the second factor of the admin with the email, together with the recovery codes and every session. It is for
+// a lost phone or a changed key. The next sign in with the password gets a setup session that enrolls a new factor. It returns the id.
+func (s *Service) ResetTOTP(ctx context.Context, email string) (string, error) {
+	acct, err := s.repo.ByEmail(ctx, strings.ToLower(strings.TrimSpace(email)))
+	if errors.Is(err, ErrNotFound) {
+		return "", ErrNotFound
+	}
+
+	if err != nil {
+		return "", fmt.Errorf("read the admin %w", err)
+	}
+
+	if err := s.repo.ResetTOTP(ctx, acct.ID); err != nil {
+		return "", fmt.Errorf("reset the second factor %w", err)
+	}
+
+	return acct.ID, nil
+}
+
 // plausibleEmail checks the shape only. The admin gets no mail from the service, so nothing proves that the address exists.
 func plausibleEmail(email string) bool {
 	local, domain, found := strings.Cut(email, "@")

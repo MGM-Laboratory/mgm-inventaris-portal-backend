@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"strings"
 	"testing"
 )
@@ -81,5 +82,14 @@ func TestCreateAdminStopsWithoutSettings(t *testing.T) {
 
 	if !strings.Contains(stderr.String(), "DATABASE_URL") || strings.Contains(stderr.String(), "example env password") || strings.Contains(stderr.String(), "admin@example.org") {
 		t.Fatalf("stderr is %q", stderr.String())
+	}
+}
+
+func TestResetTOTPNeedsTheEmailAndNothingElse(t *testing.T) {
+	for _, args := range [][]string{{}, {"--email", ""}, {"--email", "admin@example.org", "extra"}, {"--nope"}} {
+		err := runResetTOTP(args, io.Discard)
+		if err == nil || !strings.Contains(err.Error(), "usage: api reset-totp") {
+			t.Fatalf("%v gave %v", args, err)
+		}
 	}
 }

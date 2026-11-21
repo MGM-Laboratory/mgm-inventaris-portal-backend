@@ -34,6 +34,10 @@ func TestSealAndOpen(t *testing.T) {
 		t.Fatal("the sealed text shows the value")
 	}
 
+	if !strings.HasPrefix(first, "v1.") {
+		t.Fatalf("the sealed text %q has no format prefix", first)
+	}
+
 	got, err := box.Open(first, ctx)
 	if err != nil || !bytes.Equal(got, plain) {
 		t.Fatalf("open gave %q and %v", got, err)
@@ -58,7 +62,12 @@ func TestOpenRefusesWhatIsNotTheSameSeal(t *testing.T) {
 		"damaged":         func() error { _, err := box.Open(string(damaged), []byte("row one")); return err },
 		"empty":           func() error { _, err := box.Open("", []byte("row one")); return err },
 		"not base64":      func() error { _, err := box.Open("!!!", []byte("row one")); return err },
-		"too short":       func() error { _, err := box.Open("QUJD", []byte("row one")); return err },
+		"too short":       func() error { _, err := box.Open("v1.QUJD", []byte("row one")); return err },
+		"no prefix":       func() error { _, err := box.Open(strings.TrimPrefix(sealed, "v1."), []byte("row one")); return err },
+		"other prefix": func() error {
+			_, err := box.Open("v2."+strings.TrimPrefix(sealed, "v1."), []byte("row one"))
+			return err
+		},
 	}
 
 	for name, run := range tests {

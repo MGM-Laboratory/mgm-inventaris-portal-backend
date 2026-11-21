@@ -230,3 +230,18 @@ func (m *Memory) ReplaceRecoveryCodes(_ context.Context, id string, hashes []str
 
 	return nil
 }
+
+func (m *Memory) ResetTOTP(_ context.Context, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	a, err := m.find(func(a *admin.Account) bool { return a.ID == id })
+	if err != nil {
+		return err
+	}
+
+	a.TOTPSecret, a.TOTPEnabledAt, a.TOTPLastStep = "", nil, nil
+	m.setCodes(id, nil)
+
+	return nil
+}

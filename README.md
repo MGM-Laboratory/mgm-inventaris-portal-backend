@@ -46,6 +46,14 @@ read -rs ADMIN_INITIAL_PASSWORD && export ADMIN_INITIAL_PASSWORD
 go run ./cmd/api create-admin --email admin@example.org --name "Example Admin"
 ```
 
+### Reset the second factor of an admin
+
+A lost phone or a changed `TOTP_ENCRYPTION_KEY` leaves an admin without a working second factor. The command `api reset-totp --email <email>` removes the TOTP secret, the recovery codes and every session of that admin. The password stays. The next sign in gets a setup session that enrolls a new factor. The command reads the settings like the other commands, and it does not use the TOTP key, so any valid value of the setting is enough after a lost key. A sign in or an enrollment that is in flight at the very moment of the reset can still finish, so run the command when nobody is signing in.
+
+```sh
+go run ./cmd/api reset-totp --email admin@example.org
+```
+
 ## Configuration
 
 The service reads these environment variables at start. A bad value stops the start with a message that names the setting and never prints its value. `.env.example` lists every one of them.
@@ -83,7 +91,7 @@ The service reads these environment variables at start. A bad value stops the st
 ## Project layout
 
 ```text
-cmd/api/          The entry point of the service, with the commands create-admin and healthcheck
+cmd/api/          The entry point of the service, with the commands create-admin, reset-totp and healthcheck
 internal/         The settings, the HTTP servers, the sessions, the admin accounts, the password, TOTP and secret encryption code, the rate limits, the janitor, the database pool, the migrations and the test helpers
 docs/             Design pages, CI/CD documentation and the deployment guide
 deploy/           The production example of the compose file, its settings template and the rolling update script
