@@ -26,22 +26,28 @@ const commandTimeout = time.Minute
 
 const usage = "usage: api create-admin --email <email> --name <name>\n"
 
+// commands lists every subcommand, for the answer to a name that does not exist.
+const commands = usage + "       api healthcheck\n"
+
 // runCommand runs a subcommand and returns the exit code. A command prints to the writers it is given and never to the log, because
 // its output is for the person who runs it.
 func runCommand(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	if args[0] != "create-admin" {
-		_, _ = fmt.Fprintf(stderr, "unknown command %q\n%s", args[0], usage)
+	switch args[0] {
+	case "healthcheck":
+		return runHealthcheck(args[1:], os.Getenv(healthAddrEnv), healthTimeout, stderr)
+	case "create-admin":
+		if err := runCreateAdmin(args[1:], stdin, stdout); err != nil {
+			_, _ = fmt.Fprintln(stderr, "create-admin failed,", err)
+
+			return 1
+		}
+
+		return 0
+	default:
+		_, _ = fmt.Fprintf(stderr, "unknown command %q\n%s", args[0], commands)
 
 		return 2
 	}
-
-	if err := runCreateAdmin(args[1:], stdin, stdout); err != nil {
-		_, _ = fmt.Fprintln(stderr, "create-admin failed,", err)
-
-		return 1
-	}
-
-	return 0
 }
 
 func runCreateAdmin(args []string, stdin io.Reader, stdout io.Writer) error {
