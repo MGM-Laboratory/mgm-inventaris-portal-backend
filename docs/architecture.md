@@ -30,7 +30,7 @@ The backend of the LabMGM inventory portal keeps the loan records of the lab. A 
 The folders below exist today.
 
 ```
-cmd/api                       the entry point and the command create-admin
+cmd/api                       the entry point and the commands create-admin and reset-totp
 internal/config               settings from the environment
 internal/admin                admin accounts, sign in checks, TOTP enrollment, recovery codes
 internal/admin/admintest      an in-memory admin repository for tests

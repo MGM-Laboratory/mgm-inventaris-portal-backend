@@ -47,7 +47,7 @@ go run ./cmd/api create-admin --email admin@example.org --name "Example Admin"
 
 ### Reset the second factor of an admin
 
-An admin who lost the phone, or a changed `TOTP_ENCRYPTION_KEY`, leaves the admin without a working second factor. The command `api reset-totp --email <email>` removes the TOTP secret, the recovery codes and every session of that admin. The password stays. The next sign in gets a setup session that enrolls a new factor. The command reads the settings like the other commands, and it does not use the TOTP key, so any valid value of the setting is enough after a lost key.
+A lost phone or a changed `TOTP_ENCRYPTION_KEY` leaves an admin without a working second factor. The command `api reset-totp --email <email>` removes the TOTP secret, the recovery codes and every session of that admin. The password stays. The next sign in gets a setup session that enrolls a new factor. The command reads the settings like the other commands, and it does not use the TOTP key, so any valid value of the setting is enough after a lost key.
 
 ```sh
 go run ./cmd/api reset-totp --email admin@example.org

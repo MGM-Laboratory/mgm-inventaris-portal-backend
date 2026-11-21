@@ -582,7 +582,12 @@ func TestResetTOTPClearsTheFactorTheCodesAndTheSessionsOfOneAdmin(t *testing.T) 
 		t.Fatalf("the other admin has %d sessions, want 1", n)
 	}
 
-	// the password still works and now leads to a setup session that enrolls a new factor
+	// the password still works and now leads to a setup session that enrolls a new factor. The initial password is replaced first, so
+	// the missing factor is the only reason for the setup session.
+	if _, err := f.pool.Exec(ctx, `update admins set password_expires_at = null where id = $1::uuid`, id); err != nil {
+		t.Fatalf("clear the expiry failed %v", err)
+	}
+
 	signIn, err := f.svc.SignIn(ctx, admin.SignInInput{Email: "admin@example.org", Password: initialPassword})
 	if err != nil || !signIn.Setup {
 		t.Fatalf("the sign in after the reset gave %+v and %v", signIn, err)

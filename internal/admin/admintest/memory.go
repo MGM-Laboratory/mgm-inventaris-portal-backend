@@ -231,7 +231,6 @@ func (m *Memory) ReplaceRecoveryCodes(_ context.Context, id string, hashes []str
 	return nil
 }
 
-// ResetTOTP clears the factor and the recovery codes of the admin.
 func (m *Memory) ResetTOTP(_ context.Context, id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
