@@ -24,19 +24,26 @@ const adminInitialEnv = "ADMIN_INITIAL_PASSWORD"
 // commandTimeout bounds one command, which makes one hash and a few statements.
 const commandTimeout = time.Minute
 
-const usage = "usage: api create-admin --email <email> --name <name>\n"
+const usage = "usage: api create-admin --email <email> --name <name>\n       api reset-totp --email <email>\n"
 
 // runCommand runs a subcommand and returns the exit code. A command prints to the writers it is given and never to the log, because
 // its output is for the person who runs it.
 func runCommand(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	if args[0] != "create-admin" {
+	var err error
+
+	switch args[0] {
+	case "create-admin":
+		err = runCreateAdmin(args[1:], stdin, stdout)
+	case "reset-totp":
+		err = runResetTOTP(args[1:], stdout)
+	default:
 		_, _ = fmt.Fprintf(stderr, "unknown command %q\n%s", args[0], usage)
 
 		return 2
 	}
 
-	if err := runCreateAdmin(args[1:], stdin, stdout); err != nil {
-		_, _ = fmt.Fprintln(stderr, "create-admin failed,", err)
+	if err != nil {
+		_, _ = fmt.Fprintln(stderr, args[0]+" failed,", err)
 
 		return 1
 	}

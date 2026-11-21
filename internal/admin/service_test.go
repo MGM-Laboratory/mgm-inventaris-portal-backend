@@ -590,3 +590,27 @@ func TestAStorageFailureIsNotAFailedSignIn(t *testing.T) {
 		t.Fatalf("sign in gave %v", err)
 	}
 }
+
+func TestResetTOTPGivesASetupSessionAgain(t *testing.T) {
+	f := newFixture(t)
+	e := f.enroll(t, "admin@example.org")
+	ctx := context.Background()
+
+	if err := f.svc.ChangePassword(ctx, e.id, admin.ChangePasswordInput{Current: initialPassword, New: ownPassword, TOTPCode: f.code(e), RequireTOTP: true}, nil); err != nil {
+		t.Fatalf("change failed %v", err)
+	}
+
+	id, err := f.svc.ResetTOTP(ctx, "ADMIN@example.org")
+	if err != nil || id != e.id {
+		t.Fatalf("reset gave %q and %v", id, err)
+	}
+
+	got, err := f.svc.SignIn(ctx, admin.SignInInput{Email: "admin@example.org", Password: ownPassword})
+	if err != nil || !got.Setup {
+		t.Fatalf("the sign in after the reset gave %+v and %v", got, err)
+	}
+
+	if _, err := f.svc.ResetTOTP(ctx, "nobody@example.org"); !errors.Is(err, admin.ErrNotFound) {
+		t.Fatalf("an unknown email gave %v", err)
+	}
+}
