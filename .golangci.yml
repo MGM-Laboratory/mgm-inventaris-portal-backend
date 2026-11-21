@@ -76,6 +76,11 @@ linters:
         text: G124
         linters:
           - gosec
+      # the health check asks the address of the setting HEALTH_ADDR, which the operator sets, and never an address from a request
+      - path: ^cmd/api/healthcheck\.go$
+        text: G704
+        linters:
+          - gosec
       # a test may print, and main decides how the program ends and what it prints
       - path: (_test\.go|^cmd/)
         linters:
