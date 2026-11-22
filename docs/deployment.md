@@ -46,7 +46,7 @@ Copy `.env.example` to `.env` in the folder of the stack and set these values. T
 | Setting | What to set |
 | --- | --- |
 | `API_PORT_1`, `API_PORT_2`, `WEB_PORT_1`, `WEB_PORT_2` | Four ports that are free on the host |
-| `API_IMAGE_TAG`, `WEB_IMAGE_TAG` | The versions to start, as `1.2.3`. `rolling-update.sh` writes them on every update |
+| `API_IMAGE_TAG`, `WEB_IMAGE_TAG` | The tags to start, as a version such as `1.2.3` or a tag of a commit such as `sha-1a2b3c4`. Until the first release the images have only the commit tags. `rolling-update.sh` writes them on every update |
 | `DATABASE_URL` | The URL of the database of this service, with its own user and a password from `openssl rand -hex 64` |
 | `PUBLIC_BASE_URL` | The public address of the portal, with `https` and the host only |
 | `TOTP_ENCRYPTION_KEY` | A key from `openssl rand -base64 32`. Keep a copy apart from the database, because a lost key makes every stored TOTP secret unreadable. The service refuses the placeholder of the template |
@@ -107,11 +107,11 @@ A copy counts the address of a client for its rate limits. It trusts the header 
 Run the update in `tmux` or `screen`, so a dropped connection does not stop it half way.
 
 1. Read the changelog of the release, and the settings that are new or changed. A new version may add migrations.
-2. Run the script with a dry run first, for example `DRY_RUN=1 ./rolling-update.sh --api 0.2.0`. It prints the steps and changes nothing.
-3. Run it without `DRY_RUN`. A service that you do not name keeps its copies and its tag.
+2. Run the script with a dry run first, for example `./rolling-update.sh --dry-run --api 0.2.0` (the setting `DRY_RUN=1` does the same). It prints the steps and changes nothing.
+3. Run it without the dry run. A service that you do not name keeps its copies and its tag.
 4. Read the output. Each copy has to report healthy twice in a row before the script goes on to the next one.
 
-The script pulls the images before it changes anything, so a tag that does not exist stops it with nothing changed. It keeps the old `.env` as `.env.bak`, recreates the backend copies first and then the frontend copies, one at a time, and stops at the first copy that does not become healthy. It does not roll back by itself. It prints which copies run the new version, which still run the old one and the command that goes back.
+The script pulls the images before it changes anything, so a tag that does not exist stops it with nothing changed. It keeps the old `.env` as `.env.bak`, recreates the backend copies first and then the frontend copies, one at a time, and stops at the first copy that does not become healthy. It checks each copy on the address of `API_BIND` or `WEB_BIND` in `.env`, or on the loopback address when the bind is `0.0.0.0`. It does not roll back by itself. It prints which copies run the new version, which still run the old one and the command that goes back.
 
 Going back to an older backend version needs `ROLLBACK_OK` set to that version, because a newer version may have applied a migration that the older one cannot run on. A migration is not undone by going back.
 
