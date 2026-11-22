@@ -172,8 +172,8 @@ func TestEveryCodeHasItsDocumentedStatus(t *testing.T) {
 		CodeValidationFailed: 422, CodeRateLimited: 429, CodeInternal: 500, CodeUnavailable: 503,
 	}
 
-	if len(catalog) != len(want) {
-		t.Fatalf("the catalog has %d codes and the documented table has %d", len(catalog), len(want))
+	if len(codeTable) != len(want) {
+		t.Fatalf("the code table has %d codes and the documented table has %d", len(codeTable), len(want))
 	}
 
 	app := newTestAPI()

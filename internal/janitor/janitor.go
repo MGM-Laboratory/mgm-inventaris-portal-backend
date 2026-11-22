@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/errchain"
+	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/idempotency"
 	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/ratelimit"
 	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/session"
 )
@@ -36,9 +37,10 @@ type Result struct {
 	Ran      bool
 	Sessions int64
 	Counters int64
+	Keys     int64
 }
 
-// Sweep deletes the expired sessions and the old counters in one transaction. The lock is a transaction lock, so it ends with the
+// Sweep deletes the expired sessions, the old counters and the expired idempotency keys in one transaction. The lock is a transaction lock, so it ends with the
 // transaction, also when the connection breaks. A copy that does not get the lock does nothing.
 func Sweep(ctx context.Context, db DB, now time.Time) (Result, error) {
 	tx, err := db.Begin(ctx)
@@ -73,11 +75,16 @@ func Sweep(ctx context.Context, db DB, now time.Time) (Result, error) {
 		return Result{}, err
 	}
 
+	keys, err := idempotency.DeleteExpired(ctx, tx, now)
+	if err != nil {
+		return Result{}, err //nolint:wrapcheck // DeleteExpired names the call
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return Result{}, fmt.Errorf("commit the sweep %w", err)
 	}
 
-	return Result{Ran: true, Sessions: sessions, Counters: counters}, nil
+	return Result{Ran: true, Sessions: sessions, Counters: counters, Keys: keys}, nil
 }
 
 // Run sweeps now and then once for each interval, until the context ends. A failed sweep is logged and the next one starts on time.
@@ -118,7 +125,7 @@ func sweepOnce(ctx context.Context, db DB, now func() time.Time) {
 		return
 	}
 
-	if res.Sessions > 0 || res.Counters > 0 {
-		slog.Info("a sweep deleted rows", "sessions", res.Sessions, "counters", res.Counters)
+	if res.Sessions > 0 || res.Counters > 0 || res.Keys > 0 {
+		slog.Info("a sweep deleted rows", "sessions", res.Sessions, "counters", res.Counters, "idempotency_keys", res.Keys)
 	}
 }
