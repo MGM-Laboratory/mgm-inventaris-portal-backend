@@ -82,6 +82,23 @@ unset ADMIN_INITIAL_PASSWORD
 
 Until the admin sets an own password, every sign in gets only a setup session of 15 minutes.
 
+## Running copies on a second host
+
+A second host adds two more backend copies and two more frontend copies behind the same proxy. The database stays on the first host, so the second host reaches it over the network.
+
+1. Copy the three files into `~/docker/inventaris` as in the first setup. Do not create a database or a user again.
+2. Use the same `DATABASE_URL` role, the same `TOTP_ENCRYPTION_KEY` and the same image tags as the first host. Every copy has to read the same key, because a TOTP secret that one copy sealed is opened by another.
+3. Set the host name of `DATABASE_URL` to an address of the database host that the second host can reach. Keep the database port closed to every other network.
+4. Remove the network `database` from the `networks` list of the `x-api` block and from the `networks` section at the bottom of `compose.yml`. The second host has no database container to join, and compose stops when the external network does not exist.
+5. Set `API_BIND` and `WEB_BIND` to the address of the network interface that the proxy reaches, and give the four ports. The proxy lists all four backend copies and all four frontend copies as upstreams.
+6. Start the copies with `rolling-update.sh` as on the first host. A copy that starts while another copy migrates waits for the advisory lock of the migrations, and then finds nothing left to apply.
+
+Three things follow from this layout.
+
+- The URL in the example ends in `sslmode=disable`, so the traffic to the database is not encrypted. Use it only on a private encrypted network. Otherwise turn on TLS in PostgreSQL and use `sslmode=verify-full`.
+- A stop of the database host stops the backend of every host, because all copies share one database. A second host adds capacity for the web and the API processes, and it does not add availability for the data.
+- Each copy keeps a pool of `DB_MAX_CONNS` connections. Four backend copies with the default of 8 hold up to 32 connections. Keep the sum for all hosts below `max_connections` of PostgreSQL, with room for the other apps that share it.
+
 ## How a release becomes a running copy
 
 1. Release Please keeps a release pull request open on `main`. Merging it creates the tag `vX.Y.Z` and the GitHub release.
