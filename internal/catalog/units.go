@@ -76,12 +76,12 @@ func (s *Store) GetUnit(ctx context.Context, tag string) (Unit, error) {
 }
 
 // unitFilterSQL is the part of the list query that every list of units shares. The parameters are the search text, the model, the
-// category and the status.
+// category and the status. The core query gives the model and category ids as text, so the uuid parameters are compared as text.
 const unitFilterSQL = `
 	where ($1::text = '' or position(lower($1::text) in lower(tag)) > 0 or position(lower($1::text) in lower(model_name)) > 0
 	       or position(lower($1::text) in lower(coalesce(serial, ''))) > 0)
-	  and ($2::uuid is null or model_id = $2::uuid)
-	  and ($3::uuid is null or category_id = $3::uuid)
+	  and ($2::uuid is null or model_id = ($2::uuid)::text)
+	  and ($3::uuid is null or category_id = ($3::uuid)::text)
 	  and ($4::text = '' or status = $4::text)`
 
 // ListUnits returns a page of units ordered by tag.
