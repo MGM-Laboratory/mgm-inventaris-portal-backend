@@ -93,11 +93,14 @@ Until the admin sets an own password, every sign in gets only a setup session of
 
 A copy counts the address of a client for its rate limits. It trusts the header `X-Real-IP` only when the peer of the request is in `TRUSTED_PROXIES`. Behind published ports the peer is the address of the Docker network gateway or of the proxy, and it depends on the host. To check it, follow these steps.
 
-1. Set `LOG_LEVEL=debug` in `.env` for one copy and recreate that copy.
-2. Send one request through the proxy, for example `GET /api/config`.
-3. Read the request line of that copy in `docker compose logs`. The field `peer` is the address that the copy sees, `client_source` is `x-real-ip` when the header was trusted, and `client` is the address that was counted.
-4. When `client_source` is not `x-real-ip`, or `client` is the address of the proxy, add the range of `peer` to `TRUSTED_PROXIES`.
-5. Set `LOG_LEVEL` back to `info` and recreate the copy, because the debug line holds client addresses.
+1. Set `LOG_LEVEL=debug` in `.env` and recreate one copy with `docker compose up -d api-1`. The other copy keeps its old settings until it is recreated. Do not run `rolling-update.sh` for this, because it recreates both copies.
+2. Send a request through the proxy, for example `GET /api/config`. The proxy may send it to the other copy, so repeat it until the line appears in the logs of `api-1`.
+3. Read the request line of that copy in `docker compose logs api-1`. The field `peer` is the address that the copy sees. The field `client` is the address that was counted, and for an IPv6 client it is the `/64` prefix. The field `client_source` says where it came from.
+4. Act on the value of `client_source`.
+   - `x-real-ip` means the peer is trusted and the header was used. Nothing needs to change.
+   - `peer` means the peer is not in `TRUSTED_PROXIES`. Add the range of `peer` to the list.
+   - `peer-trusted-header-missing-or-bad` means the peer is trusted but the header is missing or is not an address. Make the proxy set `X-Real-IP`.
+5. Set `LOG_LEVEL` back to `info` and recreate `api-1` with `docker compose up -d api-1`, because the debug line holds client addresses.
 
 ## Updating to a new version
 
