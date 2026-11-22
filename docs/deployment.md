@@ -50,7 +50,7 @@ Copy `.env.example` to `.env` in the folder of the stack and set these values. T
 | `DATABASE_URL` | The URL of the database of this service, with its own user and a password from `openssl rand -hex 64` |
 | `PUBLIC_BASE_URL` | The public address of the portal, with `https` and the host only |
 | `TOTP_ENCRYPTION_KEY` | A key from `openssl rand -base64 32`. Keep a copy apart from the database, because a lost key makes every stored TOTP secret unreadable. The service refuses the placeholder of the template |
-| `TRUSTED_PROXIES` | The addresses and ranges of the reverse proxy as the container sees them. The template lists the three private ranges, and the real peer has to be checked on the host |
+| `TRUSTED_PROXIES` | The addresses and ranges of the reverse proxy as the container sees them. The template lists the three private ranges, and the real peer has to be checked on the host, see the section on checking the proxy address |
 
 `ENVIRONMENT=production` and `SECURE_COOKIE=true` stay as they are. Production refuses an `http` `PUBLIC_BASE_URL` and a `SECURE_COOKIE` of `false`. `MIGRATE_ON_START=true` makes each copy apply the embedded migrations at start under an advisory lock. With two copies, one applies them while the other waits and then finds nothing to do. A copy that cannot migrate never becomes healthy, so `rolling-update.sh` stops at it.
 
@@ -89,6 +89,16 @@ Until the admin sets an own password, every sign in gets only a setup session of
 3. The workflow `Docker Hub mirror` starts when `Docker` ends. It checks the signature and copies the image to Docker Hub.
 4. A person runs `rolling-update.sh` on the host with the new version. Nothing deploys by itself.
 
+## Checking the proxy address
+
+A copy counts the address of a client for its rate limits. It trusts the header `X-Real-IP` only when the peer of the request is in `TRUSTED_PROXIES`. Behind published ports the peer is the address of the Docker network gateway or of the proxy, and it depends on the host. To check it, follow these steps.
+
+1. Set `LOG_LEVEL=debug` in `.env` for one copy and recreate that copy.
+2. Send one request through the proxy, for example `GET /api/config`.
+3. Read the request line of that copy in `docker compose logs`. The field `peer` is the address that the copy sees, `client_source` is `x-real-ip` when the header was trusted, and `client` is the address that was counted.
+4. When `client_source` is not `x-real-ip`, or `client` is the address of the proxy, add the range of `peer` to `TRUSTED_PROXIES`.
+5. Set `LOG_LEVEL` back to `info` and recreate the copy, because the debug line holds client addresses.
+
 ## Updating to a new version
 
 Run the update in `tmux` or `screen`, so a dropped connection does not stop it half way.
@@ -108,7 +118,7 @@ When a compose file or an env file is edited by hand, keep the old one next to i
 
 - The four free ports on the host. The template has no value, and nobody has checked the host.
 - The name of the database container, the host name that `DATABASE_URL` needs on the network `DB_NETWORK`, and the name of the database and its user on the host.
-- The address that a backend copy sees as the peer of a request that comes through the proxy, which decides the right value of `TRUSTED_PROXIES`.
+- The address that a backend copy sees as the peer of a request that comes through the proxy, which decides the right value of `TRUSTED_PROXIES`. The section on checking the proxy address says how to read it.
 - Whether the package of each image on GitHub Container Registry is public. A package starts private, and the host needs a login with a token that can read it until the visibility is changed.
 - The arm64 build, the run of `Docker` on `main`, the version tag path, the workflow `Docker Hub mirror` and the manual `Re-sign image`. The amd64 build, the scan, the signature and `Repeatable build` ran on a pull request.
 - The frontend side. The compose file assumes that the image listens on 3000 with the route `/healthz`, that it needs no run time setting and that it writes only to `/tmp` and `/app/.next/cache`.

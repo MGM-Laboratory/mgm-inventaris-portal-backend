@@ -67,7 +67,7 @@ The service reads these environment variables at start. A bad value stops the st
 | `TRUSTED_PROXIES` | empty | A comma separated list of IP addresses and CIDR ranges of the reverse proxy. The service reads `X-Real-IP` only from a request whose peer is in the list. Empty trusts no header, so behind a proxy every client counts as the proxy address, and production logs a warning at start |
 | `ENVIRONMENT` | `production` | `development` or `production` |
 | `SECURE_COOKIE` | `true` | The `Secure` flag of the session cookie. Only `development` may set it to `false` |
-| `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
+| `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. At `debug` the request line also holds the peer address, the counted client address and where it came from, which is how `TRUSTED_PROXIES` is checked |
 | `DB_MAX_CONNS` | `8` | The size of the pool of one copy, from 1 to 50 |
 | `MIGRATE_ON_START` | `true` | Apply the embedded migrations at start, under an advisory lock |
 | `MAX_ITEMS_PER_REQUEST` | `10` | The most items in one request, from 1 to 100 |
