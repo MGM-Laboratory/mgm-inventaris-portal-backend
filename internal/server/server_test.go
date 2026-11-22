@@ -473,11 +473,17 @@ func TestReadyzAnswers503WhileDraining(t *testing.T) {
 func captureLog(t *testing.T) *bytes.Buffer {
 	t.Helper()
 
+	return captureLogAt(t, slog.LevelInfo)
+}
+
+func captureLogAt(t *testing.T, level slog.Level) *bytes.Buffer {
+	t.Helper()
+
 	var buf bytes.Buffer
 
 	previous := slog.Default()
 
-	slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, nil)))
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: level})))
 	t.Cleanup(func() { slog.SetDefault(previous) })
 
 	return &buf
@@ -564,5 +570,37 @@ func TestAccessLogLabelsTheRoute(t *testing.T) {
 
 	if strings.Count(logged, `"path":"/api/config"`) != 1 || strings.Count(logged, `"path":"unmatched"`) != 2 {
 		t.Fatalf("the labels are wrong, %s", logged)
+	}
+}
+
+func TestAccessLogShowsTheClientAddressOnlyAtTheDebugLevel(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		level slog.Level
+		want  bool
+	}{
+		{"info", slog.LevelInfo, false},
+		{"debug", slog.LevelDebug, true},
+	} {
+		logs := captureLogAt(t, tc.level)
+		app := newTestAPI()
+
+		do(t, app, http.MethodGet, "/api/config", map[string]string{"X-Real-IP": "203.0.113.9"})
+
+		logged := logs.String()
+		for _, key := range []string{`"peer":`, `"client_source":`, `"client":`} {
+			if strings.Contains(logged, key) != tc.want {
+				t.Fatalf("%s level, the key %s is present %v, want %v in %s", tc.name, key, !tc.want, tc.want, logged)
+			}
+		}
+
+		if tc.want && !strings.Contains(logged, `"client_source":"peer"`) {
+			t.Fatalf("%s level, the source of an untrusted peer is not peer in %s", tc.name, logged)
+		}
+
+		// an address that came in a header of the request is never written when the peer is not trusted, at any level
+		if strings.Contains(logged, "203.0.113.9") {
+			t.Fatalf("%s level, the log holds an address from a header of an untrusted peer, %s", tc.name, logged)
+		}
 	}
 }
