@@ -1,0 +1,48 @@
+# Example for the API docs site of the inventory portal, one copy of the docs image behind a reverse proxy. Copy this file to the folder
+# ~/docker/inventaris-docs on the host as compose.yml, copy .env.example to .env next to it and fill it in, and update the copy with
+# docker compose pull and docker compose up -d. The copy listens on the address of DOCS_BIND, which is the loopback address by default,
+# so nothing reaches it except a reverse proxy on the same host. A proxy on another host needs another address. See docs/deployment.md.
+#
+# The host port and the image tag have no default on purpose. Compose stops with a message until they are set in .env, because the free
+# ports on the host differ and a wrong default would clash with another app.
+#
+# This stack has no database, no volume and no secret. The page is built into the image from openapi.yaml, so a new version of the
+# contract needs a new image and not a change on the host. The rule that volumes live under ~/docker-volume/<name> has nothing to apply to.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "${LOG_MAX_SIZE:-10m}"
+    max-file: "${LOG_MAX_FILES:-5}"
+
+services:
+  docs:
+    image: ${DOCS_IMAGE:-ghcr.io/mgm-laboratory/mgm-inventaris-portal-docs}:${DOCS_IMAGE_TAG:?set DOCS_IMAGE_TAG in the env file}
+    container_name: inventaris-docs
+    restart: always
+    # The reaper of Docker takes the role of process 1, so a stop signal and the end of a child process are handled as they should be
+    init: true
+    stop_grace_period: ${DOCS_STOP_GRACE_PERIOD:-20s}
+    ports:
+      - "${DOCS_BIND:-127.0.0.1}:${DOCS_PORT:?set DOCS_PORT in the env file}:8080"
+    read_only: true
+    # nginx writes its process id file and its temporary paths to /tmp and nowhere else. The image runs as the user 101, so the
+    # mode lets that user write there.
+    tmpfs:
+      - /tmp:size=8m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # The image has the same check. It is repeated here so the state of the copy does not depend on the image that was pulled.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "${DOCS_CPUS:-0.50}"
+          memory: ${DOCS_MEMORY_LIMIT:-64m}
