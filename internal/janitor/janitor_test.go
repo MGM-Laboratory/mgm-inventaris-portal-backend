@@ -89,6 +89,28 @@ func TestSweepDeletesOnlyExpiredRows(t *testing.T) {
 	}
 }
 
+func TestSweepDeletesOnlyIdempotencyKeysOlderThanTheRetention(t *testing.T) {
+	pool := dbtest.New(t)
+	ctx := context.Background()
+
+	for i, created := range []time.Time{now.Add(-25 * time.Hour), now.Add(-24 * time.Hour), now.Add(-23 * time.Hour)} {
+		_, err := pool.Exec(ctx, `insert into idempotency_keys (session_hash, operation, key, state, created_at) values ($1, 'op', $2, 'running', $3)`,
+			[]byte{1}, "example-key-"+string(rune('a'+i)), created)
+		if err != nil {
+			t.Fatalf("insert key %d failed %v", i, err)
+		}
+	}
+
+	res, err := janitor.Sweep(ctx, pool, now)
+	if err != nil || !res.Ran || res.Keys != 2 {
+		t.Fatalf("the sweep gave %+v, error %v", res, err)
+	}
+
+	if n := count(t, pool, `select count(*) from idempotency_keys`); n != 1 {
+		t.Fatalf("%d keys are left", n)
+	}
+}
+
 func TestSweepSkipsWhileAnotherCopyHoldsTheLock(t *testing.T) {
 	pool := dbtest.New(t)
 	ctx := context.Background()
