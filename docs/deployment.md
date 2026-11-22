@@ -1,6 +1,6 @@
 # Deployment
 
-The portal runs from two Docker images on one host. The backend image comes from this repository and the frontend image comes from [`mgm-inventaris-portal-frontend`](https://github.com/MGM-Laboratory/mgm-inventaris-portal-frontend). CI builds, scans, signs and publishes the backend image, as [`ci-cd.md`](ci-cd.md) explains. This page covers how to run both images on a host and how to update them without downtime.
+The portal runs from two Docker images on one host. The backend image comes from this repository and the frontend image comes from [`mgm-inventaris-portal-frontend`](https://github.com/MGM-Laboratory/mgm-inventaris-portal-frontend). CI builds, scans, signs and publishes the backend image, as [`ci-cd.md`](ci-cd.md) explains. This page covers how to run both images on a host and how to update them without downtime. A third image, the API docs site, runs on its own, and the section "The API docs site" below covers it.
 
 ## The images
 
@@ -8,14 +8,16 @@ The portal runs from two Docker images on one host. The backend image comes from
 | --- | --- | --- | --- |
 | Backend | The `Dockerfile` in the root of this repository | `ghcr.io/mgm-laboratory/mgm-inventaris-portal-backend` | 8080 |
 | Frontend | The frontend repository | `ghcr.io/mgm-laboratory/mgm-inventaris-portal-frontend` | 3000 |
+| Docs site | `docs-site/Dockerfile` in this repository | `ghcr.io/mgm-laboratory/mgm-inventaris-portal-docs` | 8080 |
 
-The backend image holds one static Go binary at `/api` on a distroless base, and it runs as the numeric user 65532. It has no shell and no package manager. The image has the tags `latest` and `sha-<commit>` for `main`, `pr-<number>` for a pull request of this repository, and `1.2.3` for a release. A release also has the tag `1.2`, and a release of version 1.0.0 or later also has the tag `1`. The signed copy on Docker Hub is `<namespace>/mgm-inventaris-portal-backend`.
+The backend image holds one static Go binary at `/api` on a distroless base, and it runs as the numeric user 65532. It has no shell and no package manager. The image has the tags `latest` and `sha-<commit>` for `main`, `pr-<number>` for a pull request of this repository, and `1.2.3` for a release. A release also has the tag `1.2`, and a release of version 1.0.0 or later also has the tag `1`. The signed copy on Docker Hub is `<namespace>/mgm-inventaris-portal-backend`. The docs image has the same tags, and its signed copy on Docker Hub is `<namespace>/mgm-inventaris-portal-docs`.
 
 ## The files of `deploy/`
 
 - `compose.production.example.yml` runs two copies of the backend and two copies of the frontend, named `api-1`, `api-2`, `web-1` and `web-2`.
 - `rolling-update.sh` updates the copies one at a time.
 - `.env.example` lists the settings of the compose file and of the backend.
+- `docs/compose.example.yml` runs one copy of the docs site, named `inventaris-docs`, and `docs/.env.example` lists its settings. The folder is separate from the stack above, because the docs site shares nothing with it.
 
 ## How the copies are laid out
 
@@ -104,8 +106,8 @@ Four things follow from this layout.
 ## How a release becomes a running copy
 
 1. Release Please keeps a release pull request open on `main`. Merging it creates the tag `vX.Y.Z` and the GitHub release.
-2. The workflow `Docker` runs for `main` and for the tag. It builds the amd64 and arm64 images, pushes them to GitHub Container Registry, scans each one with Trivy, attaches a CycloneDX SBOM attestation and signs the image. The tag run adds the version tags.
-3. The workflow `Docker Hub mirror` starts when `Docker` ends. It checks the signature and copies the image to Docker Hub.
+2. The workflow `Docker` runs for `main` and for the tag. It builds the amd64 and arm64 images of the backend and of the docs site, pushes them to GitHub Container Registry, scans each one with Trivy, attaches a CycloneDX SBOM attestation and signs the image. The tag run adds the version tags.
+3. The workflow `Docker Hub mirror` starts when `Docker` ends. It checks the signature and copies each image to Docker Hub.
 4. A person runs `rolling-update.sh` on the host with the new version. Nothing deploys by itself.
 
 ## Checking the proxy address
@@ -139,6 +141,21 @@ Going back to an older backend version needs `ROLLBACK_OK` set to that version, 
 
 When a compose file or an env file is edited by hand, keep the old one next to it as `compose.yml.bak-<reason>` or `.env.bak`.
 
+## The API docs site
+
+The docs image serves the API docs page at `inventaris-docs.labmgm.org`. The page is built from `openapi.yaml` when the image is built, so a new version of the contract needs a new image and not a change on the host. The image runs nginx as an unprivileged user on port 8080. It answers `/` with the page, `/openapi.yaml` with the raw contract as plain text and `/healthz` with an empty `200` that is not logged. Every other path is a 404. The example for one copy is `deploy/docs/compose.example.yml`. It has a read only root file system, one tmpfs on `/tmp`, no Linux capabilities, `no-new-privileges`, limits for memory and CPU, a log limit and a health check. It has no database, no volume and no secret.
+
+To set up a copy, follow these steps. Every host that serves the page runs its own copy in its own folder, and the reverse proxy sends requests for the hostname to all of them.
+
+1. Make the folder `~/docker/inventaris-docs` on the host. Copy `deploy/docs/compose.example.yml` into it as `compose.yml`, and copy `deploy/docs/.env.example` into it as `.env`.
+2. Set `DOCS_PORT` to a port that is free on the host and `DOCS_IMAGE_TAG` to a version such as `1.2.3` or a tag of a commit such as `sha-1a2b3c4`. Both have no default, so compose stops with a message until they are set. `DOCS_BIND` is the loopback address by default, so only a proxy on the same host reaches the copy. A proxy on another host needs the address of the network interface that it reaches. The limits and the log settings have defaults.
+3. Start the copy with `docker compose up -d` in that folder, and check that `docker compose ps` reports it healthy.
+4. Point the reverse proxy for `inventaris-docs.labmgm.org` at the port. The proxy ends the TLS. The image sends no `Strict-Transport-Security` header, so the proxy is the place to set it.
+
+To update a copy, set `DOCS_IMAGE_TAG` in `.env` to the new version, run `docker compose pull` and then `docker compose up -d`. Compose recreates the container when the image changed, and the page is unavailable on that copy for a few seconds. The page keeps no state and sets no cookie. With a copy on two hosts, update one host, check that it is healthy and then update the other, so the proxy always has a copy to send requests to. Keep the old file next to the new one as `.env.bak` when the file is edited by hand.
+
+The page makes no request to another host. Its `Content-Security-Policy` allows scripts only by hash, and the other headers are in `docs-site/headers.conf`. How the page and the policy are built is in [`ci-cd.md`](ci-cd.md) under "API docs site".
+
 ## What is not verified yet
 
 - The layout with a second host and a remote database. The connection over the network, the TLS option and the lock across hosts were not run on a real second host by this documentation.
@@ -147,4 +164,5 @@ When a compose file or an env file is edited by hand, keep the old one next to i
 - The address that a backend copy sees as the peer of a request that comes through the proxy, which decides the right value of `TRUSTED_PROXIES`. The section on checking the proxy address says how to read it.
 - Whether the package of each image on GitHub Container Registry is public. A package starts private, and the host needs a login with a token that can read it until the visibility is changed.
 - The arm64 build, the run of `Docker` on `main`, the version tag path, the workflow `Docker Hub mirror` and the manual `Re-sign image`. The amd64 build, the scan, the signature and `Repeatable build` ran on a pull request.
+- The docs image. It has not been built or started in CI or on a host yet. Whether nginx starts with the read only root file system and the tmpfs on `/tmp`, whether the log links of the base image exist, the free port, the host name on the proxy and the TLS of that host name have not been checked.
 - The frontend side. The compose file assumes that the image listens on 3000 with the route `/healthz`, that it needs no run time setting and that it writes only to `/tmp` and `/app/.next/cache`.
