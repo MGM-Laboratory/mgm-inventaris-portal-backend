@@ -3,6 +3,7 @@
 package pagination
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"encoding/base64"
 	"encoding/json"
@@ -17,7 +18,7 @@ const (
 	// MaxLimit is the largest page size.
 	MaxLimit = 100
 	// MaxCursorLength is the length that the contract allows for a cursor.
-	MaxCursorLength = 512
+	MaxCursorLength = 1024
 
 	macLength = 16
 	macLabel  = "cursor v1"
@@ -64,7 +65,13 @@ func (c *Codec) mac(kind string, payload []byte) []byte {
 
 // Encode returns the cursor that follows a row with the sort keys. The kind names the list, so a cursor of one list fails on another.
 func (c *Codec) Encode(kind string, keys ...string) string {
-	payload, _ := json.Marshal(keys)
+	var buf bytes.Buffer
+
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(keys)
+
+	payload := bytes.TrimRight(buf.Bytes(), "\n")
 
 	return base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString(c.mac(kind, payload))
 }

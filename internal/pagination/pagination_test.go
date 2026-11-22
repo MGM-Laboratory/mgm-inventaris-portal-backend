@@ -124,3 +124,20 @@ func TestPageAnswersAnEmptyListAsAnArray(t *testing.T) {
 		t.Fatalf("the page is %s, %v", raw, err)
 	}
 }
+
+func TestTheCursorOfTheLongestNameFitsTheLimit(t *testing.T) {
+	codec := newCodec(t, "a")
+
+	// 100 four byte characters, and 100 characters that a default JSON encoder would write as six bytes
+	for _, key := range []string{strings.Repeat("\U0001F600", 100), strings.Repeat("<", 100), strings.Repeat("\x01", 100)} {
+		cursor := codec.Encode("models", key)
+
+		if len(cursor) > pagination.MaxCursorLength {
+			t.Fatalf("a cursor of %d characters is over the limit", len(cursor))
+		}
+
+		if keys, err := codec.Decode("models", cursor, 1); err != nil || len(keys) != 1 || keys[0] != key {
+			t.Fatalf("the cursor does not read back, %v", err)
+		}
+	}
+}
