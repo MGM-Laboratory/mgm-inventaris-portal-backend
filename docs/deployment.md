@@ -52,7 +52,7 @@ Copy `.env.example` to `.env` in the folder of the stack and set these values. T
 | `TOTP_ENCRYPTION_KEY` | A key from `openssl rand -base64 32`. Keep a copy apart from the database, because a lost key makes every stored TOTP secret unreadable. The service refuses the placeholder of the template |
 | `TRUSTED_PROXIES` | The addresses and ranges of the reverse proxy as the container sees them. The template lists the three private ranges, and the real peer has to be checked on the host |
 
-`ENVIRONMENT=production` and `SECURE_COOKIE=true` stay as they are. Production refuses an `http` `PUBLIC_BASE_URL` and a `SECURE_COOKIE` of `false`. `MIGRATE_ON_START=true` makes each copy apply the embedded migrations at start under an advisory lock. With two copies, one applies them while the other waits and then finds nothing to do. A copy that cannot migrate never becomes healthy, so `rolling-update.sh` stops at it.
+`ENVIRONMENT=production` and `SECURE_COOKIE=true` stay as they are. Production refuses an `http` `PUBLIC_BASE_URL` and a `SECURE_COOKIE` of `false`. `MIGRATE_ON_START=true` makes each copy apply the embedded migrations at start under an advisory lock. One copy applies them while the others wait and then find nothing to do. A copy that cannot migrate never becomes healthy, so `rolling-update.sh` stops at it.
 
 ## First setup of a host
 
@@ -86,18 +86,20 @@ Until the admin sets an own password, every sign in gets only a setup session of
 
 A second host adds two more backend copies and two more frontend copies behind the same proxy. The database stays on the first host, so the second host reaches it over the network.
 
-1. Copy the three files into `~/docker/inventaris` as in the first setup. Do not create a database or a user again.
-2. Use the same `DATABASE_URL` role, the same `TOTP_ENCRYPTION_KEY` and the same image tags as the first host. Every copy has to read the same key, because a TOTP secret that one copy sealed is opened by another.
-3. Set the host name of `DATABASE_URL` to an address of the database host that the second host can reach. Keep the database port closed to every other network.
+1. Make the folder `~/docker/inventaris` and copy the three files into it as in the first setup. Copy `.env` from the first host straight from host to host, and not through a chat. Change only `DATABASE_URL`, the binds and the ports. Do not create a database or a user again.
+2. Keep the same `DATABASE_URL` role, the same `TOTP_ENCRYPTION_KEY` and the same image tags as the first host. Every copy has to read the same key. A copy with another key cannot open a TOTP secret that another copy sealed, and it cannot confirm an enrollment that another copy began.
+3. Set the host name of `DATABASE_URL` to an address of the database host that the second host can reach. The database host has to publish the PostgreSQL port on an interface that the second host reaches, and it has to allow only the address of the second host for this role and database. Keep the port closed to every other network.
 4. Remove the network `database` from the `networks` list of the `x-api` block and from the `networks` section at the bottom of `compose.yml`. The second host has no database container to join, and compose stops when the external network does not exist.
-5. Set `API_BIND` and `WEB_BIND` to the address of the network interface that the proxy reaches, and give the four ports. The proxy lists all four backend copies and all four frontend copies as upstreams.
-6. Start the copies with `rolling-update.sh` as on the first host. A copy that starts while another copy migrates waits for the advisory lock of the migrations, and then finds nothing left to apply.
+5. Set `API_BIND` and `WEB_BIND` to the IPv4 address of the network interface that the proxy reaches, and give the four ports. The proxy lists all four backend copies and all four frontend copies as upstreams.
+6. Check the peer address that a backend copy sees on the second host, as the section on checking the proxy address says. A proxy on another host may come from a range that is not in `TRUSTED_PROXIES`. Then every client counts as the proxy, and the rate limits are shared by all clients.
+7. Start the copies with `rolling-update.sh` as on the first host. A copy that starts while another copy migrates waits for the advisory lock of the migrations for up to 120 seconds, and then finds nothing left to apply.
 
-Three things follow from this layout.
+Four things follow from this layout.
 
-- The URL in the example ends in `sslmode=disable`, so the traffic to the database is not encrypted. Use it only on a private encrypted network. Otherwise turn on TLS in PostgreSQL and use `sslmode=verify-full`.
-- A stop of the database host stops the backend of every host, because all copies share one database. A second host adds capacity for the web and the API processes, and it does not add availability for the data.
+- The URL in the example ends in `sslmode=disable`, so the traffic to the database is not encrypted. Use it only on a private encrypted network. Otherwise turn on TLS in PostgreSQL and use `sslmode=verify-full`. That needs a certificate that names the host in `DATABASE_URL` and a root certificate that the copy trusts. A private root certificate needs `sslrootcert` and a read only mount of the file into the container.
+- While the database host is down, no backend copy on any host can serve a request, because all copies share one database. A second host adds capacity for the web and the API processes, and it does not add availability for the data.
 - Each copy keeps a pool of `DB_MAX_CONNS` connections. Four backend copies with the default of 8 hold up to 32 connections. Keep the sum for all hosts below `max_connections` of PostgreSQL, with room for the other apps that share it.
+- The two hosts run two versions at once while one is updated, so update them one after the other and read the changelog for migrations first. A backend copy that is older than the database refuses to start. An old copy that restarts after a newer copy has migrated stays down until its host is updated.
 
 ## How a release becomes a running copy
 
@@ -123,6 +125,7 @@ When a compose file or an env file is edited by hand, keep the old one next to i
 
 ## What is not verified yet
 
+- The layout with a second host and a remote database. The connection over the network, the TLS option and the lock across hosts were not run on a real second host by this documentation.
 - The four free ports on the host. The template has no value, and nobody has checked the host.
 - The name of the database container, the host name that `DATABASE_URL` needs on the network `DB_NETWORK`, and the name of the database and its user on the host.
 - The address that a backend copy sees as the peer of a request that comes through the proxy, which decides the right value of `TRUSTED_PROXIES`.
