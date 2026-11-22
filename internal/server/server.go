@@ -69,6 +69,9 @@ func NewAPI(cfg config.Config, deps Deps) *fiber.App {
 	app.Post("/api/admin/me/totp", RequireAdminAccount(), enrollAdminTotp(cfg, deps))
 	app.Post("/api/admin/me/recovery-codes", RequireAdmin(), renewAdminRecoveryCodes(cfg, deps))
 
+	registerCatalogRoutes(app, deps)
+	registerAdminAssetRoutes(app, deps)
+
 	return app
 }
 

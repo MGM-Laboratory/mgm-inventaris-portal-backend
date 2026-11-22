@@ -39,8 +39,8 @@ const (
 	CodeUnavailable        Code = "unavailable"
 )
 
-// catalog is the one place that gives each code its status and its default message. The messages hold no internal detail.
-var catalog = map[Code]struct {
+// codeTable is the one place that gives each code its status and its default message. The messages hold no internal detail.
+var codeTable = map[Code]struct {
 	status  int
 	message string
 }{
@@ -84,7 +84,7 @@ type Error struct {
 }
 
 func NewError(code Code, details ...Detail) *Error {
-	return &Error{Code: code, Message: catalog[code].message, Details: details}
+	return &Error{Code: code, Message: codeTable[code].message, Details: details}
 }
 
 func (e *Error) Error() string {
@@ -92,7 +92,7 @@ func (e *Error) Error() string {
 }
 
 func (e *Error) Status() int {
-	if entry, ok := catalog[e.Code]; ok {
+	if entry, ok := codeTable[e.Code]; ok {
 		return entry.status
 	}
 
