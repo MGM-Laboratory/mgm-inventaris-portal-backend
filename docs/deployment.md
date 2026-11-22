@@ -98,7 +98,7 @@ Run the update in `tmux` or `screen`, so a dropped connection does not stop it h
 3. Run it without the dry run. A service that you do not name keeps its copies and its tag.
 4. Read the output. Each copy has to report healthy twice in a row before the script goes on to the next one.
 
-The script pulls the images before it changes anything, so a tag that does not exist stops it with nothing changed. It keeps the old `.env` as `.env.bak`, recreates the backend copies first and then the frontend copies, one at a time, and stops at the first copy that does not become healthy. It checks each copy on the address of `API_BIND` or `WEB_BIND` in `.env`, the same address that the proxy uses. It does not roll back by itself. It prints which copies run the new version, which still run the old one and the command that goes back.
+The script pulls the images before it changes anything, so a tag that does not exist stops it with nothing changed. It keeps the old `.env` as `.env.bak`, recreates the backend copies first and then the frontend copies, one at a time, and stops at the first copy that does not become healthy. It checks each copy on the address of `API_BIND` or `WEB_BIND` in `.env`, or on the loopback address when the bind is `0.0.0.0`. It does not roll back by itself. It prints which copies run the new version, which still run the old one and the command that goes back.
 
 Going back to an older backend version needs `ROLLBACK_OK` set to that version, because a newer version may have applied a migration that the older one cannot run on. A migration is not undone by going back.
 

@@ -109,17 +109,15 @@ port_of() {
 }
 
 # bind_of prints the address that the published ports listen on, as the probe has to ask it. The loopback address is the default, and
-# the address of a wildcard bind is asked through the loopback address. An IPv6 address is written in brackets for the URL.
+# the address of a wildcard bind is asked through the loopback address. Only an IPv4 address is accepted, because the compose file
+# writes the bind address without brackets.
 bind_of() {
   local value
   value="$(env_value "$1")"
   value="${value:-127.0.0.1}"
-  [[ "$value" =~ ^[0-9A-Fa-f:.]+$ ]] || die "$1 in $env_file is not an IP address, nothing was changed"
+  [[ "$value" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || die "$1 in $env_file is not an IPv4 address, nothing was changed"
   case "$value" in
-    0.0.0.0 | ::) value="127.0.0.1" ;;
-  esac
-  case "$value" in
-    *:*) value="[$value]" ;;
+    0.0.0.0) value="127.0.0.1" ;;
   esac
   echo "$value"
 }
@@ -180,9 +178,10 @@ release_lock() {
 
 # The tags are set for every compose command, because a value that is exported in the shell of the operator would otherwise win over
 # the env file and the copies would start on another tag than the one that was pulled and checked. The host ports are cleared for
-# the same reason, because the polling reads them from the env file and must see the ports that compose publishes
+# the same reason, because the polling reads them from the env file and must see the ports that compose publishes. The bind
+# addresses are cleared for the same reason
 compose() {
-  env -u API_PORT_1 -u API_PORT_2 -u WEB_PORT_1 -u WEB_PORT_2 \
+  env -u API_PORT_1 -u API_PORT_2 -u WEB_PORT_1 -u WEB_PORT_2 -u API_BIND -u WEB_BIND \
     API_IMAGE_TAG="$api_target" WEB_IMAGE_TAG="$web_target" docker compose --env-file "$env_file" "$@"
 }
 
