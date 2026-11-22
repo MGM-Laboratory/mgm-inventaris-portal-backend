@@ -101,6 +101,7 @@ A copy counts the address of a client for its rate limits. It trusts the header 
    - `peer` means the peer is not in `TRUSTED_PROXIES`. Add the range of `peer` to the list.
    - `peer-trusted-header-missing-or-bad` means the peer is trusted but the header is missing or is not an address. Make the proxy set `X-Real-IP`.
 5. Set `LOG_LEVEL` back to `info` and recreate `api-1` with `docker compose up -d api-1`, because the debug line holds client addresses.
+6. When you changed `TRUSTED_PROXIES`, recreate `api-2` as well with `docker compose up -d api-2`, because it keeps the old list until then. Send a few requests and check that both copies count the client and not the proxy.
 
 ## Updating to a new version
 
