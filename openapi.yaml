@@ -302,6 +302,8 @@ paths:
                 total: 1
         "401":
           $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "422":
           $ref: "#/components/responses/ValidationFailed"
         "500":
@@ -354,6 +356,8 @@ paths:
                   $ref: "#/components/examples/CatalogPage"
         "401":
           $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "422":
           $ref: "#/components/responses/ValidationFailed"
         "500":
@@ -2386,7 +2390,7 @@ components:
       type: string
       description: An opaque value that the service made. Send it back unchanged.
       minLength: 1
-      maxLength: 512
+      maxLength: 1024
     Page:
       type: object
       description: The pagination fields of every list answer. A typed page below adds the required `items` array with the type of its items.
