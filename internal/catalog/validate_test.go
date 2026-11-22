@@ -268,3 +268,19 @@ func TestTagShapeAndSteps(t *testing.T) {
 		}
 	}
 }
+
+func TestTextPostgreSQLWouldRefuseIsInvalidFormat(t *testing.T) {
+	for _, bad := range []string{"ab\x00cd", "ab\xff\xfecd"} {
+		if _, err := (UnitInput{Count: ptr(1), Serial: ptr("SN-" + bad), Condition: bad, Place: bad}).check(); !sameFields(fields(t, err), []string{"serial:invalid_format", "condition:invalid_format", "place:invalid_format"}) {
+			t.Fatalf("%q in a unit gives %v", bad, fields(t, err))
+		}
+
+		if _, err := (ModelFilter{Query: bad}).check(); !sameFields(fields(t, err), []string{"q:invalid_format"}) {
+			t.Fatalf("%q in a search gives %v", bad, fields(t, err))
+		}
+
+		if _, err := (LifecycleChange{Lifecycle: LifecycleMaintenance, Note: ptr(bad)}).check(); !sameFields(fields(t, err), []string{"note:invalid_format"}) {
+			t.Fatalf("%q in a note gives %v", bad, fields(t, err))
+		}
+	}
+}

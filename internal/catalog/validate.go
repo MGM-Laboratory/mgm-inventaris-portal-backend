@@ -57,6 +57,8 @@ func (c *checker) text(field, value string, minLen, maxLen int) string {
 	value = strings.TrimSpace(value)
 
 	switch n := utf8.RuneCountInString(value); {
+	case !plain(value):
+		c.fail(field, DetailInvalidFormat, "Use plain text.")
 	case n == 0:
 		c.fail(field, DetailRequired, "This field is required.")
 	case n < minLen:
@@ -68,11 +70,18 @@ func (c *checker) text(field, value string, minLen, maxLen int) string {
 	return value
 }
 
+// plain says whether a text can be stored. PostgreSQL refuses a NUL byte and a sequence that is not UTF-8, which would otherwise be a 500.
+func plain(value string) bool {
+	return utf8.ValidString(value) && !strings.ContainsRune(value, 0)
+}
+
 // optionalText is a text that may be empty. It returns the trimmed value.
 func (c *checker) optionalText(field, value string, maxLen int) string {
 	value = strings.TrimSpace(value)
 
-	if utf8.RuneCountInString(value) > maxLen {
+	if !plain(value) {
+		c.fail(field, DetailInvalidFormat, "Use plain text.")
+	} else if utf8.RuneCountInString(value) > maxLen {
 		c.fail(field, DetailTooLong, "Use at most "+strconv.Itoa(maxLen)+" characters.")
 	}
 
@@ -105,6 +114,8 @@ func (c *checker) serial(field string, value *string) *string {
 	trimmed := strings.TrimSpace(*value)
 
 	switch n := utf8.RuneCountInString(trimmed); {
+	case !plain(trimmed):
+		c.fail(field, DetailInvalidFormat, "Use plain text.")
 	case n == 0:
 		return nil
 	case n < serialMin:
@@ -121,6 +132,8 @@ func (c *checker) searchText(value string) string {
 	value = strings.TrimSpace(value)
 
 	switch n := utf8.RuneCountInString(value); {
+	case !plain(value):
+		c.fail("q", DetailInvalidFormat, "Use plain text.")
 	case n == 0:
 	case n < queryMin:
 		c.fail("q", DetailTooShort, "Use at least "+strconv.Itoa(queryMin)+" characters.")
