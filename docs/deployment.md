@@ -122,6 +122,8 @@ A copy counts the address of a client for its rate limits. It trusts the header 
 5. Set `LOG_LEVEL` back to `info` and recreate `api-1` with `docker compose up -d api-1`, because the debug line holds client addresses.
 6. When you changed `TRUSTED_PROXIES`, recreate `api-2` as well with `docker compose up -d api-2`, because it keeps the old list until then. Send a few requests and check that both copies count the client and not the proxy.
 
+On Docker Desktop for macOS, a request through a published port usually has the address of the gateway of the virtual machine as its peer, and step 3 shows the real value. That address is inside the default private ranges. So anything that can reach the published port directly counts as a trusted proxy and can choose the address that the rate limits count. Keep `API_BIND` at its default of `127.0.0.1`. Set it to a private network address only when the proxy runs on another host, and then limit who can reach that network. A narrow range such as the gateway address alone trusts fewer other private addresses. On Docker Desktop it still does not tell the proxy from a direct caller, so the bind address is the control. It also stops working when the subnet of the virtual machine changes.
+
 ## Updating to a new version
 
 Run the update in `tmux` or `screen`, so a dropped connection does not stop it half way.
