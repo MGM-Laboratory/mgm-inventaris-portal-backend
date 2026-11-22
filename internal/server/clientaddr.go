@@ -42,6 +42,34 @@ func resolveClient(peer, realIP string, trusted []netip.Prefix) string {
 	return unknownClient
 }
 
+// Where the client address of a request came from, for the debug log line.
+const (
+	sourceHeader        = "x-real-ip"
+	sourcePeer          = "peer"
+	sourceTrustedNoHint = "peer-trusted-header-missing-or-bad"
+)
+
+// clientTrace says which address the service counted for a request and why. It is for the debug log, so a person can check what
+// peer address the service sees behind the proxy and set TRUSTED_PROXIES to match. The peer is the address without its port.
+func clientTrace(peer, realIP string, trusted []netip.Prefix) (peerAddr, source, client string) {
+	peerAddr = peer
+	if addrPort, err := netip.ParseAddrPort(peer); err == nil {
+		peerAddr = addrPort.Addr().String()
+	}
+
+	source = sourcePeer
+
+	if config.TrustedPeer(trusted, peer) {
+		source = sourceTrustedNoHint
+
+		if _, err := netip.ParseAddr(strings.TrimSpace(realIP)); err == nil {
+			source = sourceHeader
+		}
+	}
+
+	return peerAddr, source, resolveClient(peer, realIP, trusted)
+}
+
 // clientKey is the address of an IPv4 client and the /64 prefix of an IPv6 client.
 func clientKey(addr netip.Addr) string {
 	addr = addr.Unmap().WithZone("")

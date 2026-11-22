@@ -506,3 +506,36 @@ func TestDatabaseOutageIsAnswered503(t *testing.T) {
 		t.Fatalf("status is %d, %s", res.StatusCode, data)
 	}
 }
+
+func TestClientTraceSaysWhereTheAddressCameFrom(t *testing.T) {
+	proxies := []netip.Prefix{netip.MustParsePrefix("172.16.0.0/12")}
+
+	tests := []struct {
+		name, peer, header, wantPeer, wantSource, wantClient string
+	}{
+		{"trusted peer with a good header", "172.18.0.1:5000", "203.0.113.9", "172.18.0.1", "x-real-ip", "203.0.113.9"},
+		{"trusted peer with no header", "172.18.0.1:5000", "", "172.18.0.1", "peer-trusted-header-missing-or-bad", "172.18.0.1"},
+		{"trusted peer with a bad header", "172.18.0.1:5000", "not an address", "172.18.0.1", "peer-trusted-header-missing-or-bad", "172.18.0.1"},
+		{"untrusted peer with a header", "198.51.100.7:5000", "203.0.113.9", "198.51.100.7", "peer", "198.51.100.7"},
+		{"trusted peer, IPv6 client", "172.18.0.1:5000", "2001:db8:1:2:3:4:5:6", "172.18.0.1", "x-real-ip", "2001:db8:1:2::/64"},
+		{"peer with no port", "172.18.0.1", "203.0.113.9", "172.18.0.1", "x-real-ip", "203.0.113.9"},
+		{"IPv4 mapped peer", "[::ffff:172.18.0.1]:5000", "203.0.113.9", "::ffff:172.18.0.1", "x-real-ip", "203.0.113.9"},
+		{"peer that is not an address", "pipe", "203.0.113.9", "pipe", "peer", "unknown"},
+	}
+
+	for _, tc := range tests {
+		peer, source, client := clientTrace(tc.peer, tc.header, proxies)
+		if peer != tc.wantPeer || source != tc.wantSource || client != tc.wantClient {
+			t.Fatalf("%s gave %q %q %q, want %q %q %q", tc.name, peer, source, client, tc.wantPeer, tc.wantSource, tc.wantClient)
+		}
+
+		// the counted address of the trace is the one that the rate limits use, so the two cannot drift apart
+		if client != resolveClient(tc.peer, tc.header, proxies) {
+			t.Fatalf("%s traced %q but counted %q", tc.name, client, resolveClient(tc.peer, tc.header, proxies))
+		}
+	}
+
+	if peer, source, client := clientTrace("172.18.0.1:5000", "203.0.113.9", nil); peer != "172.18.0.1" || source != "peer" || client != "172.18.0.1" {
+		t.Fatalf("an empty list gave %q %q %q", peer, source, client)
+	}
+}

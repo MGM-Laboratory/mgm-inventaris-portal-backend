@@ -46,11 +46,11 @@ Copy `.env.example` to `.env` in the folder of the stack and set these values. T
 | Setting | What to set |
 | --- | --- |
 | `API_PORT_1`, `API_PORT_2`, `WEB_PORT_1`, `WEB_PORT_2` | Four ports that are free on the host |
-| `API_IMAGE_TAG`, `WEB_IMAGE_TAG` | The versions to start, as `1.2.3`. `rolling-update.sh` writes them on every update |
+| `API_IMAGE_TAG`, `WEB_IMAGE_TAG` | The tags to start, as a version such as `1.2.3` or a tag of a commit such as `sha-1a2b3c4`. Until the first release the images have only the commit tags. `rolling-update.sh` writes them on every update |
 | `DATABASE_URL` | The URL of the database of this service, with its own user and a password from `openssl rand -hex 64` |
 | `PUBLIC_BASE_URL` | The public address of the portal, with `https` and the host only |
 | `TOTP_ENCRYPTION_KEY` | A key from `openssl rand -base64 32`. Keep a copy apart from the database, because a lost key makes every stored TOTP secret unreadable. The service refuses the placeholder of the template |
-| `TRUSTED_PROXIES` | The addresses and ranges of the reverse proxy as the container sees them. The template lists the three private ranges, and the real peer has to be checked on the host |
+| `TRUSTED_PROXIES` | The addresses and ranges of the reverse proxy as the container sees them. The template lists the three private ranges, and the real peer has to be checked on the host, see the section on checking the proxy address |
 
 `ENVIRONMENT=production` and `SECURE_COOKIE=true` stay as they are. Production refuses an `http` `PUBLIC_BASE_URL` and a `SECURE_COOKIE` of `false`. `MIGRATE_ON_START=true` makes each copy apply the embedded migrations at start under an advisory lock. With two copies, one applies them while the other waits and then finds nothing to do. A copy that cannot migrate never becomes healthy, so `rolling-update.sh` stops at it.
 
@@ -89,16 +89,30 @@ Until the admin sets an own password, every sign in gets only a setup session of
 3. The workflow `Docker Hub mirror` starts when `Docker` ends. It checks the signature and copies the image to Docker Hub.
 4. A person runs `rolling-update.sh` on the host with the new version. Nothing deploys by itself.
 
+## Checking the proxy address
+
+A copy counts the address of a client for its rate limits. It trusts the header `X-Real-IP` only when the peer of the request is in `TRUSTED_PROXIES`. Behind published ports the peer is the address of the Docker network gateway or of the proxy, and it depends on the host. To check it, follow these steps.
+
+1. Set `LOG_LEVEL=debug` in `.env` and recreate one copy with `docker compose up -d api-1`. The other copy keeps its old settings until it is recreated. Do not run `rolling-update.sh` for this, because it recreates both copies.
+2. Send a request through the proxy, for example `GET /api/config`. The proxy may send it to the other copy, so repeat it until the line appears in the logs of `api-1`.
+3. Read the request line of that copy in `docker compose logs api-1`. The field `peer` is the address that the copy sees. The field `client` is the address that was counted, and for an IPv6 client it is the `/64` prefix. The field `client_source` says where it came from.
+4. Act on the value of `client_source`.
+   - `x-real-ip` means the peer is trusted and the header was used. Nothing needs to change.
+   - `peer` means the peer is not in `TRUSTED_PROXIES`. Add the range of `peer` to the list.
+   - `peer-trusted-header-missing-or-bad` means the peer is trusted but the header is missing or is not an address. Make the proxy set `X-Real-IP`.
+5. Set `LOG_LEVEL` back to `info` and recreate `api-1` with `docker compose up -d api-1`, because the debug line holds client addresses.
+6. When you changed `TRUSTED_PROXIES`, recreate `api-2` as well with `docker compose up -d api-2`, because it keeps the old list until then. Send a few requests and check that both copies count the client and not the proxy.
+
 ## Updating to a new version
 
 Run the update in `tmux` or `screen`, so a dropped connection does not stop it half way.
 
 1. Read the changelog of the release, and the settings that are new or changed. A new version may add migrations.
-2. Run the script with a dry run first, for example `DRY_RUN=1 ./rolling-update.sh --api 0.2.0`. It prints the steps and changes nothing.
-3. Run it without `DRY_RUN`. A service that you do not name keeps its copies and its tag.
+2. Run the script with a dry run first, for example `./rolling-update.sh --dry-run --api 0.2.0` (the setting `DRY_RUN=1` does the same). It prints the steps and changes nothing.
+3. Run it without the dry run. A service that you do not name keeps its copies and its tag.
 4. Read the output. Each copy has to report healthy twice in a row before the script goes on to the next one.
 
-The script pulls the images before it changes anything, so a tag that does not exist stops it with nothing changed. It keeps the old `.env` as `.env.bak`, recreates the backend copies first and then the frontend copies, one at a time, and stops at the first copy that does not become healthy. It does not roll back by itself. It prints which copies run the new version, which still run the old one and the command that goes back.
+The script pulls the images before it changes anything, so a tag that does not exist stops it with nothing changed. It keeps the old `.env` as `.env.bak`, recreates the backend copies first and then the frontend copies, one at a time, and stops at the first copy that does not become healthy. It checks each copy on the address of `API_BIND` or `WEB_BIND` in `.env`, or on the loopback address when the bind is `0.0.0.0`. It does not roll back by itself. It prints which copies run the new version, which still run the old one and the command that goes back.
 
 Going back to an older backend version needs `ROLLBACK_OK` set to that version, because a newer version may have applied a migration that the older one cannot run on. A migration is not undone by going back.
 
@@ -108,7 +122,7 @@ When a compose file or an env file is edited by hand, keep the old one next to i
 
 - The four free ports on the host. The template has no value, and nobody has checked the host.
 - The name of the database container, the host name that `DATABASE_URL` needs on the network `DB_NETWORK`, and the name of the database and its user on the host.
-- The address that a backend copy sees as the peer of a request that comes through the proxy, which decides the right value of `TRUSTED_PROXIES`.
+- The address that a backend copy sees as the peer of a request that comes through the proxy, which decides the right value of `TRUSTED_PROXIES`. The section on checking the proxy address says how to read it.
 - Whether the package of each image on GitHub Container Registry is public. A package starts private, and the host needs a login with a token that can read it until the visibility is changed.
 - The arm64 build, the run of `Docker` on `main`, the version tag path, the workflow `Docker Hub mirror` and the manual `Re-sign image`. The amd64 build, the scan, the signature and `Repeatable build` ran on a pull request.
 - The frontend side. The compose file assumes that the image listens on 3000 with the route `/healthz`, that it needs no run time setting and that it writes only to `/tmp` and `/app/.next/cache`.

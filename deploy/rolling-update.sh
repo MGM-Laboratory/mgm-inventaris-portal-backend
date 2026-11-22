@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Updates the copies of the inventory portal on a host one at a time, so the other copy of each service keeps answering while one restarts.
 #
-# usage  ./rolling-update.sh [--api <version>] [--web <version>]        for example ./rolling-update.sh --api 0.2.0 --web 0.1.1
+# usage  ./rolling-update.sh [--dry-run] [--api <tag>] [--web <tag>]   for example ./rolling-update.sh --api 0.2.0 --web 0.1.1
+#         A tag is a version such as 1.2.3, or a tag of a commit such as sha-1a2b3c4, which is what the images have until the first release.
 #
 # At least one of the two options is needed. A service that is not named keeps its copies and its tag as they are. A version is
 # written as 1.2.3, with or without the v.
@@ -21,7 +22,8 @@
 #
 # The health listener of the API is not published, so Docker runs the check inside the container with the command api healthcheck.
 # The script reads the result from the state of the container, and it asks GET /api/config on the published port of the API and
-# GET /healthz on the published port of the web app, so a wrong port in the env file shows up here.
+# GET /healthz on the published port of the web app, on the address of API_BIND and WEB_BIND in the env file (the loopback address
+# when they are not set), so a wrong port or address in the env file shows up here.
 #
 # Going back to an older API version is allowed only when ROLLBACK_OK is set to that version, because a newer version may have
 # applied a database migration that the older version cannot run on. Read the changelog first, because a newer version may have
@@ -31,7 +33,7 @@
 #   COMPOSE_DIR   the folder with the compose file and the env file, default the folder of this script
 #   TIMEOUT       seconds to wait for one copy to become healthy, default 120
 #   ROLLBACK_OK   the API version that you confirm to go back to
-#   DRY_RUN       1, true or yes prints the steps and changes nothing, but it still checks the services
+#   DRY_RUN       1, true or yes prints the steps and changes nothing, but it still checks the services. The flag --dry-run does the same
 set -euo pipefail
 
 die() {
@@ -39,15 +41,20 @@ die() {
   exit 1
 }
 
-usage="usage rolling-update.sh [--api <version>] [--web <version>], for example --api 0.2.0 --web 0.1.1"
+usage="usage rolling-update.sh [--dry-run] [--api <tag>] [--web <tag>], for example --api 0.2.0 --web 0.1.1 or --api sha-1a2b3c4"
 
 api_version=""
 web_version=""
+dry_run_flag=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
+    --dry-run)
+      dry_run_flag=1
+      shift
+      ;;
     --api | --web)
-      [ "$#" -ge 2 ] || die "$1 needs a version. $usage"
-      [[ "$2" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "The version after $1 must look like 1.2.3, got $2"
+      [ "$#" -ge 2 ] || die "$1 needs a tag. $usage"
+      [[ "$2" =~ ^(v?[0-9]+\.[0-9]+\.[0-9]+|sha-[0-9a-f]{7,40})$ ]] || die "The tag after $1 must look like 1.2.3 or sha-1a2b3c4, got $2"
       if [ "$1" = "--api" ]; then api_version="${2#v}"; else web_version="${2#v}"; fi
       shift 2
       ;;
@@ -68,6 +75,7 @@ case "${DRY_RUN:-0}" in
   0 | false | no | "") dry_run=0 ;;
   *) die "DRY_RUN must be 1, true, yes, 0, false or no, got ${DRY_RUN}" ;;
 esac
+[ "$dry_run_flag" = "0" ] || dry_run=1
 
 for tool in docker curl; do
   command -v "$tool" >/dev/null || die "$tool is not installed"
@@ -100,8 +108,23 @@ port_of() {
   echo "$value"
 }
 
+# bind_of prints the address that the published ports listen on, as the probe has to ask it. The loopback address is the default, and
+# the address of a wildcard bind is asked through the loopback address. Only an IPv4 address is accepted, because the compose file
+# writes the bind address without brackets.
+bind_of() {
+  local value
+  value="$(env_value "$1")"
+  value="${value:-127.0.0.1}"
+  [[ "$value" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || die "$1 in $env_file is not an IPv4 address, nothing was changed"
+  case "$value" in
+    0.0.0.0) value="127.0.0.1" ;;
+  esac
+  echo "$value"
+}
+
 services=()
 components=()
+hosts=()
 ports=()
 paths=()
 # the API copies come first and the web copies after them, and a service that was not asked for is left out
@@ -110,8 +133,10 @@ if [ -n "$api_version" ]; then
   port_1="$(port_of API_PORT_1)"
   port_2="$(port_of API_PORT_2)"
   [ "$port_1" != "$port_2" ] || die "API_PORT_1 and API_PORT_2 are the same port in $env_file, nothing was changed"
+  host="$(bind_of API_BIND)"
   services+=(api-1 api-2)
   components+=(api api)
+  hosts+=("$host" "$host")
   ports+=("$port_1" "$port_2")
   paths+=(/api/config /api/config)
 fi
@@ -119,8 +144,10 @@ if [ -n "$web_version" ]; then
   port_1="$(port_of WEB_PORT_1)"
   port_2="$(port_of WEB_PORT_2)"
   [ "$port_1" != "$port_2" ] || die "WEB_PORT_1 and WEB_PORT_2 are the same port in $env_file, nothing was changed"
+  host="$(bind_of WEB_BIND)"
   services+=(web-1 web-2)
   components+=(web web)
+  hosts+=("$host" "$host")
   ports+=("$port_1" "$port_2")
   paths+=(/healthz /healthz)
 fi
@@ -151,9 +178,10 @@ release_lock() {
 
 # The tags are set for every compose command, because a value that is exported in the shell of the operator would otherwise win over
 # the env file and the copies would start on another tag than the one that was pulled and checked. The host ports are cleared for
-# the same reason, because the polling reads them from the env file and must see the ports that compose publishes
+# the same reason, because the polling reads them from the env file and must see the ports that compose publishes. The bind
+# addresses are cleared for the same reason
 compose() {
-  env -u API_PORT_1 -u API_PORT_2 -u WEB_PORT_1 -u WEB_PORT_2 \
+  env -u API_PORT_1 -u API_PORT_2 -u WEB_PORT_1 -u WEB_PORT_2 -u API_BIND -u WEB_BIND \
     API_IMAGE_TAG="$api_target" WEB_IMAGE_TAG="$web_target" docker compose --env-file "$env_file" "$@"
 }
 
@@ -185,12 +213,12 @@ container_health() {
 # healthy succeeds only when Docker reports the copy healthy, the published port answers 200 and the container runs the version that
 # was asked for. It prints the state that it saw, so a failure shows why.
 healthy() {
-  local service="$1" port="$2" path="$3" want="$4" state tag
+  local service="$1" host="$2" port="$3" path="$4" want="$5" state tag
   state="$(container_health "$service")" || state="missing"
   echo "docker=$state"
   [ "$state" = "healthy" ] || return 1
-  curl -fsS --max-time 5 -o /dev/null "http://127.0.0.1:${port}${path}" 2>/dev/null || {
-    echo "port ${port} did not answer 200"
+  curl -fsS --max-time 5 -o /dev/null "http://${host}:${port}${path}" 2>/dev/null || {
+    echo "${host}:${port} did not answer 200"
     return 1
   }
   tag="$(running_version "$service")" || return 1
@@ -268,7 +296,7 @@ for service in "${services[@]}"; do
 done
 
 # going back needs a confirmation, because a newer API version may have changed the database in a way that the older one cannot run on
-if [ -n "$api_version" ] && [[ "$previous_api" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && [ "$previous_api" != "$api_version" ] && older "$api_version" "$previous_api"; then
+if [[ "$api_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && [[ "$previous_api" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && [ "$previous_api" != "$api_version" ] && older "$api_version" "$previous_api"; then
   echo "WARNING $api_version is older than $previous_api, which runs now. A newer version may have applied a database migration that $api_version cannot run on." >&2
   rollback_ok="${ROLLBACK_OK:-}"
   [ "${rollback_ok#v}" = "$api_version" ] || die "Going back needs ROLLBACK_OK=$api_version, nothing was changed"
@@ -348,12 +376,13 @@ half_done() {
 
 for i in "${!services[@]}"; do
   service="${services[$i]}"
+  host="${hosts[$i]}"
   port="${ports[$i]}"
   path="${paths[$i]}"
   want="$api_version"
   [ "${components[$i]}" = "api" ] || want="$web_version"
 
-  echo "Updating $service on 127.0.0.1:$port"
+  echo "Updating $service on ${host}:$port"
   copy_started=1
   if ! run compose up -d --no-deps --force-recreate "$service"; then
     echo "$service could not be recreated. Check docker compose ps and the logs of $service." >&2
@@ -370,7 +399,7 @@ for i in "${!services[@]}"; do
   answer=""
   start="$SECONDS"
   while [ $((SECONDS - start)) -lt "$timeout" ]; do
-    if answer="$(healthy "$service" "$port" "$path" "$want")"; then
+    if answer="$(healthy "$service" "$host" "$port" "$path" "$want")"; then
       ok=$((ok + 1))
       echo "$service healthy ($ok of 2) $answer"
       if [ "$ok" -ge 2 ]; then
