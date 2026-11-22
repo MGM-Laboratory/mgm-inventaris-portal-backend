@@ -66,6 +66,34 @@
       "groupName": "Image base images"
     },
     {
+      "description": "digest and patch updates of the base images of the docs image arrive in one pull request",
+      "matchManagers": ["dockerfile"],
+      "matchFileNames": ["docs-site/Dockerfile"],
+      "matchUpdateTypes": ["minor", "patch", "digest", "pin"],
+      "groupName": "Docs image base images"
+    },
+    {
+      "description": "a new major Node image changes the toolchain that builds the docs page, so it waits for approval on the dependency dashboard",
+      "matchManagers": ["dockerfile"],
+      "matchFileNames": ["docs-site/Dockerfile"],
+      "matchPackageNames": ["node"],
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "the docs image follows the stable line of nginx, so a new minor or major image, which can be the mainline, waits for approval on the dependency dashboard",
+      "matchManagers": ["dockerfile"],
+      "matchFileNames": ["docs-site/Dockerfile"],
+      "matchPackageNames": ["nginxinc/nginx-unprivileged"],
+      "matchUpdateTypes": ["major", "minor"],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "the Redocly CLI that builds the docs page and lints the spec is an npm package and a build tool",
+      "matchManagers": ["npm"],
+      "semanticCommitType": "build"
+    },
+    {
       "matchManagers": ["github-actions"],
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "GitHub Actions"

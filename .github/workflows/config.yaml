@@ -78,10 +78,13 @@ jobs:
           username: ${{ vars.DOCKERHUB_USERNAME }}
           token: ${{ secrets.DOCKERHUB_PULL_TOKEN }}
 
-      # The image is the hadolint stage of .github/tools/Dockerfile, which the update bot keeps current
-      - name: Lint the Dockerfile
+      # The image is the hadolint stage of .github/tools/Dockerfile, which the update bot keeps current. It reads one Dockerfile from
+      # the standard input, so it runs once for the API image and once for the docs image.
+      - name: Lint the Dockerfiles
         run: |
-          docker run --rm -i "$(bash ./.github/actions/pull-images/pull.sh "$(bash ./.github/tools/image.sh hadolint)")" < Dockerfile
+          image="$(bash ./.github/actions/pull-images/pull.sh "$(bash ./.github/tools/image.sh hadolint)")"
+          docker run --rm -i "$image" < Dockerfile
+          docker run --rm -i "$image" < docs-site/Dockerfile
 
   shellcheck:
     name: ShellCheck
@@ -134,7 +137,7 @@ jobs:
       - name: Lint the example env files
         run: |
           docker run --rm -v "$PWD:/app:ro" -w /app "$(bash ./.github/actions/pull-images/pull.sh "$(bash ./.github/tools/image.sh dotenv-linter)")" \
-            check --skip-updates --plain --ignore-checks UnorderedKey .env.example deploy/.env.example
+            check --skip-updates --plain --ignore-checks UnorderedKey .env.example deploy/.env.example deploy/docs/.env.example
 
   compose:
     name: Compose config
@@ -160,6 +163,16 @@ jobs:
           fi
           API_IMAGE_TAG=0.0.0 WEB_IMAGE_TAG=0.0.0 API_PORT_1=4001 API_PORT_2=4002 WEB_PORT_1=3001 WEB_PORT_2=3002 \
             docker compose -f deploy/compose.production.example.yml config --quiet
+
+      # The same two checks for the docs site example. Its port and tag have no default either.
+      - name: Check the docs compose file
+        run: |
+          cp deploy/docs/.env.example deploy/docs/.env
+          if docker compose -f deploy/docs/compose.example.yml config --quiet 2> /dev/null; then
+            echo "The docs compose file starts without the port and the tag, so it can clash with another app" >&2
+            exit 1
+          fi
+          DOCS_IMAGE_TAG=0.0.0 DOCS_PORT=4003 docker compose -f deploy/docs/compose.example.yml config --quiet
 
   names:
     name: File names
@@ -231,17 +244,54 @@ jobs:
         with:
           node-version: 24
 
+      # The CLI is the one that docs-site/package.json pins for the docs page, so the spec is linted and built with the same version.
+      # The install runs no script of any package.
       - name: Lint openapi.yaml
-        env:
-          # renovate: datasource=npm depName=@redocly/cli
-          version: 2.70.0
-        run: npx --yes "@redocly/cli@${version}" lint openapi.yaml
+        working-directory: docs-site
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx --no-install redocly lint ../openapi.yaml --config ../redocly.yaml
+
+  # A spec can lint and still fail to build, and the docs site is built from it. This runs the same build as the docs image, so a
+  # spec that the viewer cannot render is found before the merge. finish-page.mjs fails on a page that needs another host.
+  docs:
+    name: OpenAPI docs build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: Build the docs page
+        working-directory: docs-site
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run build
+
+      # The build writes the page, its gzip copy and the header of the Content-Security-Policy. All three must exist and hold data.
+      - name: Check the files of the page
+        working-directory: docs-site/dist
+        run: |
+          for file in index.html index.html.gz csp.conf; do
+            test -s "$file" || { echo "$file is missing or empty" >&2; exit 1; }
+          done
+          grep -q 'script-src' csp.conf
+          ls -l index.html index.html.gz csp.conf
 
   # The one check that the ruleset requires, so a job can be added or renamed here without a change of the ruleset
   gate:
     name: Config gate
     if: always()
-    needs: [actionlint, zizmor, hadolint, shellcheck, dotenv, compose, names, renovate, openapi]
+    needs: [actionlint, zizmor, hadolint, shellcheck, dotenv, compose, names, renovate, openapi, docs]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
