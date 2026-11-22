@@ -6,5 +6,7 @@
 # for a review. The approval count of the ruleset still applies. The last matching line wins.
 /go.mod
 /go.sum
+/docs-site/package.json
+/docs-site/package-lock.json
 /CHANGELOG.md
 /.release-please-manifest.json

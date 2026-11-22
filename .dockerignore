@@ -15,6 +15,7 @@ coverage.*
 *.md
 docs
 deploy
+docs-site
 openapi.yaml
 redocly.yaml
 compose*.yml

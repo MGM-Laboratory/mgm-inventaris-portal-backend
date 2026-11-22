@@ -48,6 +48,12 @@ ls:
     <<: [*shared, *yaml-ban]
   deploy/*:
     <<: [*shared, *yaml-ban]
+  # the docs site, its image files and the tooling that builds the page from openapi.yaml. The Dockerfile follows the shared rules
+  # as the Dockerfile of the root does, and the example of the docs compose file is under deploy/docs.
+  docs-site:
+    <<: [*shared, *yaml-ban]
+  docs-site/*:
+    <<: [*shared, *yaml-ban]
 
   # a golang-migrate file is a four digit number, an underscore, a title, and .up.sql or .down.sql. The title is lowercase words
   # joined by underscores, which the kebab case rule of the shared rules would refuse.
@@ -71,6 +77,8 @@ ignore:
   - .github/ISSUE_TEMPLATE
   # pre-commit reads this exact name
   - .pre-commit-config.yaml
+  # BuildKit reads the ignore file of a Dockerfile by this name, the name of the Dockerfile and then .dockerignore
+  - docs-site/Dockerfile.dockerignore
   # the Redocly CLI and the tools around OpenAPI read these exact names
   - openapi.yaml
   - redocly.yaml
