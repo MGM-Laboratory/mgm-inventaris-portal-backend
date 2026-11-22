@@ -1,6 +1,6 @@
 # Architecture
 
-Status of this page. It describes the design of the service. The code so far holds the settings, the database pool with the migrations, the error body, the request id, the guest session (cookie, Origin and CSRF checks, role guards, rate limit and janitor), the admin accounts (Argon2id passwords, TOTP, recovery codes and the command that creates an admin), the routes `GET /api/config`, `POST /api/session/guest`, `GET /api/session`, `DELETE /api/session`, `POST /api/admin/session`, `GET /api/admin/me`, `POST /api/admin/me/password`, `POST /api/admin/me/totp` and `POST /api/admin/me/recovery-codes`, and the health routes. Every other statement here is a plan until the code that does it is merged.
+Status of this page. It describes the design of the service. The code so far holds the settings, the database pool with the migrations, the error body, the request id, the guest session (cookie, Origin and CSRF checks, role guards, rate limit and janitor), the admin accounts (Argon2id passwords, TOTP, recovery codes and the command that creates an admin), the routes `GET /api/config`, `POST /api/session/guest`, `GET /api/session`, `DELETE /api/session`, `POST /api/admin/session`, `GET /api/admin/me`, `POST /api/admin/me/password`, `POST /api/admin/me/totp` and `POST /api/admin/me/recovery-codes`, the catalog and asset routes (`GET /api/categories`, `GET /api/catalog`, `GET /api/assets/{tag}` and the admin routes for categories, models, units, lifecycle steps and unit events), and the health routes. Every other statement here is a plan until the code that does it is merged.
 
 ## What the service does
 
@@ -34,6 +34,9 @@ cmd/api                       the entry point and the commands create-admin, res
 internal/config               settings from the environment
 internal/admin                admin accounts, sign in checks, TOTP enrollment, recovery codes
 internal/admin/admintest      an in-memory admin repository for tests
+internal/catalog              categories, models, units, lifecycle steps, unit events and availability
+internal/idempotency          Idempotency-Key claims and stored answers
+internal/pagination           the signed cursor and the limit of a list
 internal/password             Argon2id hashing with a cap on parallel hashes, and the rules for a new password
 internal/totp                 TOTP codes of RFC 6238 and the otpauth address
 internal/secretbox            AES-256-GCM sealing of the TOTP secret and derived secrets
@@ -41,13 +44,13 @@ internal/errchain             describes an error for a log line without request 
 internal/server               API app, health app, middleware, role guards, session routes, error mapping
 internal/session              sessions table, tokens, cookie
 internal/ratelimit            fixed window counters in the database
-internal/janitor              scheduled sweep of expired sessions and old counters
+internal/janitor              scheduled sweep of expired sessions, old counters and expired idempotency keys
 internal/database             pool and migrations
 internal/database/migrations  the embedded SQL files of golang-migrate
 internal/database/dbtest      a database for each test, skipped without DATABASE_URL
 ```
 
-These packages are planned and have no folder yet. `internal/catalog` (categories, models, units, availability), `internal/ticket` (tickets, numbers, status changes, handover, return) and `internal/mail` (a sending interface with no provider yet).
+These packages are planned and have no folder yet. `internal/ticket` (tickets, numbers, status changes, handover, return) and `internal/mail` (a sending interface with no provider yet).
 
 A package owns its tables and exposes plain functions. A handler never builds SQL. Other packages call the owner of a table and never read its tables.
 

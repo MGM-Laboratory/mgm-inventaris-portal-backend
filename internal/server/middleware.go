@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"regexp"
 	"runtime/debug"
 	"time"
@@ -85,8 +86,10 @@ func Recover() fiber.Handler {
 	}
 }
 
-// AccessLog writes one JSON line for each request. It never writes the query, a header, a cookie or a body.
-func AccessLog() fiber.Handler {
+// AccessLog writes one JSON line for each request. It never writes the query, a header, a cookie or a body. At the debug level the
+// line also holds the address of the peer, the address that was counted for the client and where that address came from, which is how
+// the setting TRUSTED_PROXIES is checked on a host. The addresses are left out of the lines of every other level.
+func AccessLog(trusted []netip.Prefix) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		start := time.Now()
 		err := c.Next()
@@ -96,8 +99,17 @@ func AccessLog() fiber.Handler {
 			_, status = resolve(err)
 		}
 
-		slog.Info("request", "request_id", requestID(c), "method", c.Method(), "path", routeLabel(c, err), "status", status,
-			"duration_ms", time.Since(start).Milliseconds())
+		attrs := []any{
+			"request_id", requestID(c), "method", c.Method(), "path", routeLabel(c, err), "status", status,
+			"duration_ms", time.Since(start).Milliseconds(),
+		}
+
+		if slog.Default().Enabled(c.Context(), slog.LevelDebug) {
+			peer, source, client := clientTrace(c.RequestCtx().RemoteAddr().String(), c.Get(realIPHeader), trusted)
+			attrs = append(attrs, "peer", peer, "client_source", source, "client", client)
+		}
+
+		slog.Info("request", attrs...)
 
 		return err
 	}

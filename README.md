@@ -22,7 +22,7 @@ The backend of the LabMGM inventory portal, written in Go with PostgreSQL. The f
 
 ## Quick start
 
-The service so far holds the settings, the database schema, the health routes, the route `GET /api/config`, the routes of the guest session (`POST /api/session/guest`, `GET /api/session` and `DELETE /api/session`) and the routes of the admin account (`POST /api/admin/session`, `GET /api/admin/me`, `POST /api/admin/me/password`, `POST /api/admin/me/totp` and `POST /api/admin/me/recovery-codes`). The other routes of the contract are not built yet.
+The service so far holds the settings, the database schema, the health routes, the route `GET /api/config`, the routes of the guest session (`POST /api/session/guest`, `GET /api/session` and `DELETE /api/session`), the routes of the admin account (`POST /api/admin/session`, `GET /api/admin/me`, `POST /api/admin/me/password`, `POST /api/admin/me/totp` and `POST /api/admin/me/recovery-codes`) and the routes of the catalog and the assets (`GET /api/categories`, `GET /api/catalog`, `GET /api/assets/{tag}`, and for an admin the categories, models, units, lifecycle steps and unit events under `/api/admin`). The routes of the tickets and the dashboard are not built yet.
 
 1. Have a PostgreSQL 17 database and a role that owns it. The service applies its migrations at start.
 2. Copy `.env.example` to `.env` and set `DATABASE_URL`, `PUBLIC_BASE_URL` and `TOTP_ENCRYPTION_KEY`. Make the key with `openssl rand -base64 32`. The service reads the process environment and not the file, so load the file with your shell or your process manager.
@@ -67,7 +67,7 @@ The service reads these environment variables at start. A bad value stops the st
 | `TRUSTED_PROXIES` | empty | A comma separated list of IP addresses and CIDR ranges of the reverse proxy. The service reads `X-Real-IP` only from a request whose peer is in the list. Empty trusts no header, so behind a proxy every client counts as the proxy address, and production logs a warning at start |
 | `ENVIRONMENT` | `production` | `development` or `production` |
 | `SECURE_COOKIE` | `true` | The `Secure` flag of the session cookie. Only `development` may set it to `false` |
-| `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
+| `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. At `debug` the request line also holds the peer address, the counted client address and where it came from, which is how `TRUSTED_PROXIES` is checked |
 | `DB_MAX_CONNS` | `8` | The size of the pool of one copy, from 1 to 50 |
 | `MIGRATE_ON_START` | `true` | Apply the embedded migrations at start, under an advisory lock |
 | `MAX_ITEMS_PER_REQUEST` | `10` | The most items in one request, from 1 to 100 |
@@ -92,7 +92,7 @@ The service reads these environment variables at start. A bad value stops the st
 
 ```text
 cmd/api/          The entry point of the service, with the commands create-admin, reset-totp and healthcheck
-internal/         The settings, the HTTP servers, the sessions, the admin accounts, the password, TOTP and secret encryption code, the rate limits, the janitor, the database pool, the migrations and the test helpers
+internal/         The settings, the HTTP servers, the sessions, the admin accounts, the catalog of assets, the pagination cursor, the idempotency keys, the password, TOTP and secret encryption code, the rate limits, the janitor, the database pool, the migrations and the test helpers
 docs/             Design pages, CI/CD documentation and the deployment guide
 deploy/           The production example of the compose file, its settings template and the rolling update script
 Dockerfile        The image of the service

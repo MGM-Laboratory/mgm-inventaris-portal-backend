@@ -54,7 +54,7 @@ func newApp(trusted []netip.Prefix) *fiber.App {
 func NewAPI(cfg config.Config, deps Deps) *fiber.App {
 	app := newApp(cfg.TrustedProxies)
 
-	app.Use(RequestID(), NoStore(), AccessLog(), Recover())
+	app.Use(RequestID(), NoStore(), AccessLog(cfg.TrustedProxies), Recover())
 	app.Use(LoadSession(deps.Sessions, session.CookieName(cfg.SecureCookie)), OriginAndCSRF(cfg.PublicBaseURL))
 
 	app.Get("/api/config", configHandler(cfg))
@@ -68,6 +68,9 @@ func NewAPI(cfg config.Config, deps Deps) *fiber.App {
 	app.Post("/api/admin/me/password", RequireAdminAccount(), changeAdminPassword(cfg, deps))
 	app.Post("/api/admin/me/totp", RequireAdminAccount(), enrollAdminTotp(cfg, deps))
 	app.Post("/api/admin/me/recovery-codes", RequireAdmin(), renewAdminRecoveryCodes(cfg, deps))
+
+	registerCatalogRoutes(app, deps)
+	registerAdminAssetRoutes(app, deps)
 
 	return app
 }

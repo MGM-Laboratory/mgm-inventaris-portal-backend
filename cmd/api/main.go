@@ -15,8 +15,10 @@ import (
 	"github.com/gofiber/fiber/v3"
 
 	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/admin"
+	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/catalog"
 	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/config"
 	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/database"
+	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/idempotency"
 	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/janitor"
 	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/password"
 	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/ratelimit"
@@ -33,7 +35,7 @@ const (
 	// then stop together under shutdownTimeout, so a stop signal takes drainGrace plus shutdownTimeout at most.
 	drainGrace      = 3 * time.Second
 	shutdownTimeout = 15 * time.Second
-	// janitorInterval is the time between two sweeps of expired sessions and old counters.
+	// janitorInterval is the time between two sweeps of expired sessions, old counters and expired idempotency keys.
 	janitorInterval = 10 * time.Minute
 	// hashWait is how long a request waits for a free slot of the password hasher before it answers that the service is busy.
 	hashWait = 3 * time.Second
@@ -110,10 +112,17 @@ func run(level *slog.LevelVar) error {
 		return err
 	}
 
+	box, err := secretbox.New(cfg.TOTPKey())
+	if err != nil {
+		return fmt.Errorf("make the cursor box %w", err)
+	}
+
 	api := server.NewAPI(cfg, server.Deps{
-		Sessions: session.NewStore(pool, time.Now),
-		Limiter:  ratelimit.New(pool, time.Now),
-		Admins:   admins,
+		Sessions:    session.NewStore(pool, time.Now),
+		Limiter:     ratelimit.New(pool, time.Now),
+		Admins:      admins,
+		Catalog:     catalog.NewStore(pool, box, time.Now),
+		Idempotency: idempotency.NewStore(pool, time.Now),
 	})
 	health := server.NewHealth(pool, func() server.PoolStats {
 		stat := pool.Stat()
