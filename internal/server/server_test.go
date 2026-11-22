@@ -594,6 +594,10 @@ func TestAccessLogShowsTheClientAddressOnlyAtTheDebugLevel(t *testing.T) {
 			}
 		}
 
+		if tc.want && !strings.Contains(logged, `"client_source":"peer"`) {
+			t.Fatalf("%s level, the source of an untrusted peer is not peer in %s", tc.name, logged)
+		}
+
 		// an address that came in a header of the request is never written when the peer is not trusted, at any level
 		if strings.Contains(logged, "203.0.113.9") {
 			t.Fatalf("%s level, the log holds an address from a header of an untrusted peer, %s", tc.name, logged)
