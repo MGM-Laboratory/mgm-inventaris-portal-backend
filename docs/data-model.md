@@ -66,6 +66,9 @@ All tables live in one PostgreSQL database. Ids are UUIDs made by the service. T
 - The `model_id` of a unit never changes, because a change would break the lock order.
 - A status change of a ticket is a guarded update. It names the expected old status and the expected version, and it changes no row when either differs. The service then answers `409`.
 - A request that creates a ticket, a model, a category or units may carry an `Idempotency-Key`. The service stores the key for the session with the answer for 24 hours and returns the same answer for a repeat, whatever the new body says. The row has a state, `running` or `done`, and a repeat that arrives while the first request runs answers `409` with the code `request_in_progress`.
+- A claim that stays in the state `running` for more than 2 minutes belongs to a copy that died. A new request with the same key takes it over, and the old request can no longer store its answer, so its transaction does not commit.
+- A model that is retired takes no new units, and the service answers `409` with the code `status_conflict`.
+- The cursor of a list is signed with a key derived from `TOTP_ENCRYPTION_KEY`, so a client cannot build one. A cursor that does not verify answers `422` with the detail field `cursor`.
 - Database specs in CI prove these rules on a real PostgreSQL, because a mock cannot prove locks.
 
 ## People and sessions

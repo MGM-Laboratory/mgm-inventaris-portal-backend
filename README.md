@@ -22,7 +22,7 @@ The backend of the LabMGM inventory portal, written in Go with PostgreSQL. The f
 
 ## Quick start
 
-The service so far holds the settings, the database schema, the health routes, the route `GET /api/config`, the routes of the guest session (`POST /api/session/guest`, `GET /api/session` and `DELETE /api/session`) and the routes of the admin account (`POST /api/admin/session`, `GET /api/admin/me`, `POST /api/admin/me/password`, `POST /api/admin/me/totp` and `POST /api/admin/me/recovery-codes`). The other routes of the contract are not built yet.
+The service so far holds the settings, the database schema, the health routes, the route `GET /api/config`, the routes of the guest session (`POST /api/session/guest`, `GET /api/session` and `DELETE /api/session`) the routes of the admin account (`POST /api/admin/session`, `GET /api/admin/me`, `POST /api/admin/me/password`, `POST /api/admin/me/totp` and `POST /api/admin/me/recovery-codes`) and the routes of the catalog and the assets (`GET /api/categories`, `GET /api/catalog`, `GET /api/assets/{tag}`, and for an admin the categories, models, units, lifecycle steps and unit events under `/api/admin`). The routes of the tickets and the dashboard are not built yet.
 
 1. Have a PostgreSQL 17 database and a role that owns it. The service applies its migrations at start.
 2. Copy `.env.example` to `.env` and set `DATABASE_URL`, `PUBLIC_BASE_URL` and `TOTP_ENCRYPTION_KEY`. Make the key with `openssl rand -base64 32`. The service reads the process environment and not the file, so load the file with your shell or your process manager.
@@ -92,7 +92,7 @@ The service reads these environment variables at start. A bad value stops the st
 
 ```text
 cmd/api/          The entry point of the service, with the commands create-admin, reset-totp and healthcheck
-internal/         The settings, the HTTP servers, the sessions, the admin accounts, the password, TOTP and secret encryption code, the rate limits, the janitor, the database pool, the migrations and the test helpers
+internal/         The settings, the HTTP servers, the sessions, the admin accounts, the catalog of assets, the pagination cursor, the idempotency keys, the password, TOTP and secret encryption code, the rate limits, the janitor, the database pool, the migrations and the test helpers
 docs/             Design pages, CI/CD documentation and the deployment guide
 deploy/           The production example of the compose file, its settings template and the rolling update script
 Dockerfile        The image of the service
