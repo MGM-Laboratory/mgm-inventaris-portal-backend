@@ -29,6 +29,10 @@ go.work.sum
 bin/
 *.pem
 
+# the output and the packages of the docs page build
+docs-site/dist/
+docs-site/node_modules/
+
 # env files, only the example is tracked
 .env
 .env.*

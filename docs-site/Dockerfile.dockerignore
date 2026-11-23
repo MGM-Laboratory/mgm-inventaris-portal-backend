@@ -1,0 +1,11 @@
+# The context of the docs image holds only what its Dockerfile copies. Everything else, including every env file, stays out.
+*
+!openapi.yaml
+!redocly.yaml
+!go.mod
+!go.sum
+!cmd/docs-server
+cmd/docs-server/*_test.go
+!docs-site/package.json
+!docs-site/package-lock.json
+!docs-site/finish-page.mjs

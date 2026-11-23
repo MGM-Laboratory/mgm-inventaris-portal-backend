@@ -51,19 +51,33 @@
       "enabled": false
     },
     {
-      "description": "a new minor or major Go image needs a matching go directive in go.mod, so it waits for approval on the dependency dashboard",
+      "description": "a new minor or major Go image needs a matching go directive in go.mod, so it waits for approval on the dependency dashboard. The docs image builds its server with the same Go image",
       "matchManagers": ["dockerfile"],
-      "matchFileNames": ["Dockerfile"],
+      "matchFileNames": ["Dockerfile", "docs-site/Dockerfile"],
       "matchPackageNames": ["golang"],
       "matchUpdateTypes": ["major", "minor"],
       "dependencyDashboardApproval": true
     },
     {
-      "description": "digest and patch updates of the base images of the service image arrive in one pull request",
+      "description": "digest and patch updates of the base images of the service image and of the docs image arrive in one pull request, because the Go image and the distroless image are shared and have to move together",
       "matchManagers": ["dockerfile"],
-      "matchFileNames": ["Dockerfile"],
+      "matchFileNames": ["Dockerfile", "docs-site/Dockerfile"],
+      "matchPackageNames": ["!node"],
       "matchUpdateTypes": ["minor", "patch", "digest", "pin"],
       "groupName": "Image base images"
+    },
+    {
+      "description": "a new major Node image changes the toolchain that builds the docs page, so it waits for approval on the dependency dashboard",
+      "matchManagers": ["dockerfile"],
+      "matchFileNames": ["docs-site/Dockerfile"],
+      "matchPackageNames": ["node"],
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "the Redocly CLI that builds the docs page and lints the spec is an npm package and a build tool",
+      "matchManagers": ["npm"],
+      "semanticCommitType": "build"
     },
     {
       "matchManagers": ["github-actions"],

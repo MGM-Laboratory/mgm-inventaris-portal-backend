@@ -2,3 +2,7 @@
 # error, so a warning in the recommended ruleset would pass CI, and a new rule of a later CLI version is covered as well.
 extends:
   - recommended-strict
+
+# The CLI sends no usage data, and the page that build-docs writes sends none to the vendor either. The page of the docs site has to
+# make no request to another host, see docs-site/finish-page.mjs.
+telemetry: off

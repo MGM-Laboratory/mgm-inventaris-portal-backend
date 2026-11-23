@@ -1,0 +1,14 @@
+{
+  "name": "mgm-inventaris-portal-api-docs",
+  "private": true,
+  "description": "Tooling that builds the API documentation page from openapi.yaml",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "build": "redocly build-docs ../openapi.yaml --config ../redocly.yaml --inlineBundle --output dist/index.html && node finish-page.mjs dist/index.html"
+  },
+  "devDependencies": {
+    "@redocly/cli": "2.70.0"
+  }
+}

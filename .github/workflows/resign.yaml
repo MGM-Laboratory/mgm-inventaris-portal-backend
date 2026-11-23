@@ -16,7 +16,8 @@ permissions: {}
 
 jobs:
   resign:
-    name: Sign the image again
+    # The name of the API job is the one that it had before the docs image came, so the name of its check did not change.
+    name: ${{ matrix.image == 'api' && 'Sign the image again' || 'Sign the docs image again' }}
     # The signature check accepts this workflow only when it ran on main
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -26,10 +27,20 @@ jobs:
     permissions:
       packages: write
       id-token: write
+    # Both images of a release are signed again by one run, so a release never ends with one signed by the old key and one by the new
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: api
+            repo: mgm-inventaris-portal-backend
+          - image: docs
+            repo: mgm-inventaris-portal-docs
     env:
       TAG: ${{ inputs.tag }}
       HUB: ${{ vars.DOCKERHUB_USERNAME != '' }}
-      HUB_IMAGE: ${{ vars.DOCKERHUB_USERNAME || 'local' }}/mgm-inventaris-portal-backend
+      HUB_IMAGE: ${{ vars.DOCKERHUB_USERNAME || 'local' }}/${{ matrix.repo }}
+      IMAGE_NAME: ${{ matrix.repo }}
     steps:
       - name: Check the version
         run: |
@@ -37,7 +48,7 @@ jobs:
             echo "The tag must be a full version such as 0.4.0" >&2
             exit 1
           fi
-          echo "GHCR_IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+          echo "GHCR_IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${IMAGE_NAME}" >> "$GITHUB_ENV"
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0

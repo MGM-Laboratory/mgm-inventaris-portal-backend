@@ -1,6 +1,6 @@
 name: Docker Hub mirror
 
-# Copies the image that the Docker workflow built to Docker Hub. The Docker workflow also runs for pull requests, and a pull
+# Copies the images that the Docker workflow built to Docker Hub, the API image and the docs image. The Docker workflow also runs for pull requests, and a pull
 # request can change that workflow, so the Docker Hub token does not belong in it. The token lives in the docker-hub environment.
 # This workflow is started by workflow_run, so GitHub always runs the copy of this file that is on main and a pull request cannot
 # change it. It never checks out the repository and never runs anything from the pull request, it only moves an image by digest.
@@ -29,7 +29,8 @@ permissions: {}
 
 jobs:
   mirror:
-    name: Copy the image to Docker Hub
+    # The name of the API job is the one that it had before the docs image came, so the name of its check did not change.
+    name: ${{ matrix.image == 'api' && 'Copy the image to Docker Hub' || 'Copy the docs image to Docker Hub' }}
     # Pull request runs have nothing to copy here, and neither do Dependabot and fork runs, which are built without a push
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
@@ -45,9 +46,18 @@ jobs:
     permissions:
       contents: read
       packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: api
+            repo: mgm-inventaris-portal-backend
+          - image: docs
+            repo: mgm-inventaris-portal-docs
     env:
-      HUB_IMAGE: ${{ vars.DOCKERHUB_USERNAME }}/mgm-inventaris-portal-backend
+      HUB_IMAGE: ${{ vars.DOCKERHUB_USERNAME }}/${{ matrix.repo }}
       REPOSITORY: ${{ github.repository }}
+      IMAGE_NAME: ${{ matrix.repo }}
     steps:
       # Everything below comes from fields that GitHub fills in and that a pull request cannot choose, and the tag names are built
       # from them here. The branch name is only compared, never put into a command
@@ -60,7 +70,8 @@ jobs:
           HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
         run: |
           set -euo pipefail
-          echo "ghcr=ghcr.io/${REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+          owner="${REPOSITORY%%/*}"
+          echo "ghcr=ghcr.io/${owner,,}/${IMAGE_NAME}" >> "$GITHUB_OUTPUT"
           sha7="${HEAD_SHA::7}"
           workflow="https://github.com/${REPOSITORY}/.github/workflows/docker.yaml"
           skip() { echo "::notice::$1"; echo "copy=false" >> "$GITHUB_OUTPUT"; exit 0; }
