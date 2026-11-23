@@ -25,6 +25,7 @@ import (
 	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/secretbox"
 	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/server"
 	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/session"
+	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/ticket"
 )
 
 // version is set at build time with -ldflags.
@@ -117,11 +118,16 @@ func run(level *slog.LevelVar) error {
 		return fmt.Errorf("make the cursor box %w", err)
 	}
 
+	tickets := ticket.NewStore(pool, box, time.Now, ticket.Limits{
+		MaxItems: cfg.MaxItemsPerRequest, MinDays: server.MinDurationDays, MaxDays: cfg.MaxDurationDays, MaxOpen: cfg.MaxOpenTickets,
+	})
+
 	api := server.NewAPI(cfg, server.Deps{
 		Sessions:    session.NewStore(pool, time.Now),
 		Limiter:     ratelimit.New(pool, time.Now),
 		Admins:      admins,
 		Catalog:     catalog.NewStore(pool, box, time.Now),
+		Tickets:     tickets,
 		Idempotency: idempotency.NewStore(pool, time.Now),
 	})
 	health := server.NewHealth(pool, func() server.PoolStats {

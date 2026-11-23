@@ -70,6 +70,26 @@ func badBody() *Error {
 	return e
 }
 
+// countGuestSession counts one new guest session for the address of the request against the guest sign in limit. Every route that
+// starts a guest session without a form calls it, so none of them is a way around the limit.
+func countGuestSession(ctx context.Context, c fiber.Ctx, cfg config.Config, deps Deps) error {
+	key := "guest-signin:" + clientAddr(c, cfg.TrustedProxies)
+
+	hit, err := deps.Limiter.Hit(ctx, key, cfg.GuestSigninPerHour, guestSigninWindow)
+	if err != nil {
+		return dbError("count the guest sign in", err)
+	}
+
+	if !hit.Allowed {
+		e := NewError(CodeRateLimited)
+		e.RetryAfter = hit.RetryAfterSeconds()
+
+		return e
+	}
+
+	return nil
+}
+
 // The order of the steps of the guest sign in matters. The rate limit counts every request, also one with a bad body, and it runs
 // before the body is read. The validation runs before the trap, so a bot that fills the hidden field
 // sees the same answers to a bad form as everybody else.
@@ -80,18 +100,8 @@ func startGuestSession(cfg config.Config, deps Deps) fiber.Handler {
 		ctx, cancel := context.WithTimeout(c.Context(), dbTimeout)
 		defer cancel()
 
-		key := "guest-signin:" + clientAddr(c, cfg.TrustedProxies)
-
-		hit, err := deps.Limiter.Hit(ctx, key, cfg.GuestSigninPerHour, guestSigninWindow)
-		if err != nil {
-			return dbError("count the guest sign in", err)
-		}
-
-		if !hit.Allowed {
-			e := NewError(CodeRateLimited)
-			e.RetryAfter = hit.RetryAfterSeconds()
-
-			return e
+		if err := countGuestSession(ctx, c, cfg, deps); err != nil {
+			return err
 		}
 
 		form, err := parseGuestForm(c.Body())

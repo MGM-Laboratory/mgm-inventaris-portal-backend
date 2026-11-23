@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -113,6 +114,29 @@ func (f *fakeStore) Delete(_ context.Context, hash []byte) error {
 	defer f.mu.Unlock()
 
 	delete(f.sessions, string(hash))
+
+	return nil
+}
+
+// AddViewableTicket keeps the cap and the order of the real store, and a session that is gone is not an error.
+func (f *fakeStore) AddViewableTicket(_ context.Context, hash []byte, ticketID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	sess, ok := f.sessions[string(hash)]
+	if !ok {
+		return nil
+	}
+
+	list := slices.DeleteFunc(slices.Clone(sess.ViewableTickets), func(id string) bool { return id == ticketID })
+	list = append(list, ticketID)
+
+	if len(list) > session.MaxViewableTickets {
+		list = list[len(list)-session.MaxViewableTickets:]
+	}
+
+	sess.ViewableTickets = list
+	f.sessions[string(hash)] = sess
 
 	return nil
 }

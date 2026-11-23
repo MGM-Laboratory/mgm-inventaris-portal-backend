@@ -65,6 +65,13 @@ type Config struct {
 
 	// GuestSigninPerHour is the most guest sign in requests that one client address may send in an hour.
 	GuestSigninPerHour int `env:"GUEST_SIGNIN_PER_HOUR" envDefault:"60"`
+	// TicketCreatePerHour is the most ticket requests that one client address may send in an hour. Every request counts.
+	TicketCreatePerHour int `env:"TICKET_CREATE_PER_HOUR" envDefault:"20"`
+	// TicketLookupAddressFailures is the most failed ticket lookups in an hour for one client address.
+	TicketLookupAddressFailures int `env:"TICKET_LOOKUP_ADDRESS_FAILURES" envDefault:"20"`
+	// TicketLookupNumberFailures is the most failed ticket lookups in an hour for one ticket number without its last four characters
+	// together with one email.
+	TicketLookupNumberFailures int `env:"TICKET_LOOKUP_NUMBER_FAILURES" envDefault:"10"`
 
 	// AdminSigninPairFailures is the most failed admin sign ins in 15 minutes for one email from one client address. The next request
 	// of that pair answers 429 until the window ends.
@@ -199,6 +206,10 @@ func (c *Config) validateLimits() error {
 		return fmt.Errorf("GUEST_SIGNIN_PER_HOUR is %d and must be between 1 and %d", c.GuestSigninPerHour, maxSigninCap)
 	}
 
+	if c.TicketCreatePerHour < 1 || c.TicketCreatePerHour > maxSigninCap {
+		return fmt.Errorf("TICKET_CREATE_PER_HOUR is %d and must be between 1 and %d", c.TicketCreatePerHour, maxSigninCap)
+	}
+
 	for _, limit := range []struct {
 		name  string
 		value int
@@ -207,6 +218,8 @@ func (c *Config) validateLimits() error {
 		{"ADMIN_SIGNIN_PAIR_FAILURES", c.AdminSigninPairFailures, maxFailureCap},
 		{"ADMIN_SIGNIN_ADDRESS_FAILURES", c.AdminSigninAddressFailures, maxFailureCap},
 		{"ADMIN_ACCOUNT_FAILURES", c.AdminAccountFailures, maxFailureCap},
+		{"TICKET_LOOKUP_ADDRESS_FAILURES", c.TicketLookupAddressFailures, maxFailureCap},
+		{"TICKET_LOOKUP_NUMBER_FAILURES", c.TicketLookupNumberFailures, maxFailureCap},
 		{"PASSWORD_HASH_CONCURRENCY", c.PasswordHashConcurrency, maxHashCap},
 	} {
 		if limit.value < 1 || limit.value > limit.most {

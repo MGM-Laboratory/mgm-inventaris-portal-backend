@@ -1,6 +1,6 @@
 # Architecture
 
-Status of this page. It describes the design of the service. The code so far holds the settings, the database pool with the migrations, the error body, the request id, the guest session (cookie, Origin and CSRF checks, role guards, rate limit and janitor), the admin accounts (Argon2id passwords, TOTP, recovery codes and the command that creates an admin), the routes `GET /api/config`, `POST /api/session/guest`, `GET /api/session`, `DELETE /api/session`, `POST /api/admin/session`, `GET /api/admin/me`, `POST /api/admin/me/password`, `POST /api/admin/me/totp` and `POST /api/admin/me/recovery-codes`, the catalog and asset routes (`GET /api/categories`, `GET /api/catalog`, `GET /api/assets/{tag}` and the admin routes for categories, models, units, lifecycle steps and unit events), and the health routes. Every other statement here is a plan until the code that does it is merged.
+Status of this page. It describes the design of the service. The code so far holds the settings, the database pool with the migrations, the error body, the request id, the guest session (cookie, Origin and CSRF checks, role guards, rate limit and janitor), the admin accounts (Argon2id passwords, TOTP, recovery codes and the command that creates an admin), the routes `GET /api/config`, `POST /api/session/guest`, `GET /api/session`, `DELETE /api/session`, `POST /api/admin/session`, `GET /api/admin/me`, `POST /api/admin/me/password`, `POST /api/admin/me/totp` and `POST /api/admin/me/recovery-codes`, the catalog and asset routes (`GET /api/categories`, `GET /api/catalog`, `GET /api/assets/{tag}` and the admin routes for categories, models, units, lifecycle steps and unit events), the routes of a borrower for the tickets (`POST /api/tickets`, `GET /api/tickets`, `POST /api/tickets/lookup`, `GET /api/tickets/{number}` and `POST /api/tickets/{number}/cancel`), and the health routes. The admin routes for the tickets and the dashboard are not built yet. Every other statement here is a plan until the code that does it is merged.
 
 ## What the service does
 
@@ -35,6 +35,7 @@ internal/config               settings from the environment
 internal/admin                admin accounts, sign in checks, TOTP enrollment, recovery codes
 internal/admin/admintest      an in-memory admin repository for tests
 internal/catalog              categories, models, units, lifecycle steps, unit events and availability
+internal/ticket               tickets, numbers, the table of statuses, creation, reads and the cancel of a guest
 internal/idempotency          Idempotency-Key claims and stored answers
 internal/pagination           the signed cursor and the limit of a list
 internal/password             Argon2id hashing with a cap on parallel hashes, and the rules for a new password
@@ -50,9 +51,9 @@ internal/database/migrations  the embedded SQL files of golang-migrate
 internal/database/dbtest      a database for each test, skipped without DATABASE_URL
 ```
 
-These packages are planned and have no folder yet. `internal/ticket` (tickets, numbers, status changes, handover, return) and `internal/mail` (a sending interface with no provider yet).
+Two parts are planned and have no code yet. The admin steps of a ticket (decision, ready, handover, return and cancel) will join `internal/ticket`. The package `internal/mail` will hold a sending interface with no provider yet.
 
-A package owns its tables and exposes plain functions. A handler never builds SQL. Other packages call the owner of a table and never read its tables.
+A package owns its tables and exposes plain functions. A handler never builds SQL. Other packages call the owner of a table and never write its tables. Two reads cross that line on purpose. The catalog reads the tickets to compute the held quantity of a model, and the ticket package joins the model name to the items of a ticket.
 
 ## Security model
 

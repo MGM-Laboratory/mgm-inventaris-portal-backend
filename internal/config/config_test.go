@@ -59,6 +59,10 @@ func TestDefaults(t *testing.T) {
 		t.Fatalf("the guest sign in limit is %d", cfg.GuestSigninPerHour)
 	}
 
+	if cfg.TicketCreatePerHour != 20 || cfg.TicketLookupAddressFailures != 20 || cfg.TicketLookupNumberFailures != 10 {
+		t.Fatalf("the ticket limits are %d %d %d", cfg.TicketCreatePerHour, cfg.TicketLookupAddressFailures, cfg.TicketLookupNumberFailures)
+	}
+
 	if cfg.AdminSigninPairFailures != 5 || cfg.AdminSigninAddressFailures != 20 || cfg.AdminAccountFailures != 5 || cfg.PasswordHashConcurrency != 2 {
 		t.Fatalf("the admin limits are %d %d %d %d", cfg.AdminSigninPairFailures, cfg.AdminSigninAddressFailures,
 			cfg.AdminAccountFailures, cfg.PasswordHashConcurrency)
@@ -91,10 +95,13 @@ func TestOverrides(t *testing.T) {
 		"MAX_OPEN_TICKETS":      "2",
 		"GUEST_SIGNIN_PER_HOUR": "5",
 
-		"ADMIN_SIGNIN_PAIR_FAILURES":    "3",
-		"ADMIN_SIGNIN_ADDRESS_FAILURES": "9",
-		"ADMIN_ACCOUNT_FAILURES":        "4",
-		"PASSWORD_HASH_CONCURRENCY":     "1",
+		"TICKET_CREATE_PER_HOUR":         "7",
+		"TICKET_LOOKUP_ADDRESS_FAILURES": "8",
+		"TICKET_LOOKUP_NUMBER_FAILURES":  "4",
+		"ADMIN_SIGNIN_PAIR_FAILURES":     "3",
+		"ADMIN_SIGNIN_ADDRESS_FAILURES":  "9",
+		"ADMIN_ACCOUNT_FAILURES":         "4",
+		"PASSWORD_HASH_CONCURRENCY":      "1",
 	}))
 	if err != nil {
 		t.Fatalf("parse failed %v", err)
@@ -116,6 +123,10 @@ func TestOverrides(t *testing.T) {
 
 	if cfg.MaxItemsPerRequest != 5 || cfg.MaxDurationDays != 14 || cfg.MaxOpenTickets != 2 || cfg.GuestSigninPerHour != 5 {
 		t.Fatal("limits were not read")
+	}
+
+	if cfg.TicketCreatePerHour != 7 || cfg.TicketLookupAddressFailures != 8 || cfg.TicketLookupNumberFailures != 4 {
+		t.Fatal("the ticket limits were not read")
 	}
 
 	if cfg.AdminSigninPairFailures != 3 || cfg.AdminSigninAddressFailures != 9 || cfg.AdminAccountFailures != 4 || cfg.PasswordHashConcurrency != 1 {
@@ -197,6 +208,10 @@ func TestBadValues(t *testing.T) {
 		{"sign in limit too low", with(map[string]string{"GUEST_SIGNIN_PER_HOUR": "0"}), "GUEST_SIGNIN_PER_HOUR"},
 		{"sign in limit too high", with(map[string]string{"GUEST_SIGNIN_PER_HOUR": "100001"}), "GUEST_SIGNIN_PER_HOUR"},
 		{"sign in limit not a number", with(map[string]string{"GUEST_SIGNIN_PER_HOUR": "many"}), "GUEST_SIGNIN_PER_HOUR"},
+		{"ticket create limit too low", with(map[string]string{"TICKET_CREATE_PER_HOUR": "0"}), "TICKET_CREATE_PER_HOUR"},
+		{"ticket create limit too high", with(map[string]string{"TICKET_CREATE_PER_HOUR": "100001"}), "TICKET_CREATE_PER_HOUR"},
+		{"lookup address limit too low", with(map[string]string{"TICKET_LOOKUP_ADDRESS_FAILURES": "0"}), "TICKET_LOOKUP_ADDRESS_FAILURES"},
+		{"lookup number limit too high", with(map[string]string{"TICKET_LOOKUP_NUMBER_FAILURES": "1001"}), "TICKET_LOOKUP_NUMBER_FAILURES"},
 		{"pair limit too low", with(map[string]string{"ADMIN_SIGNIN_PAIR_FAILURES": "0"}), "ADMIN_SIGNIN_PAIR_FAILURES"},
 		{"address limit too high", with(map[string]string{"ADMIN_SIGNIN_ADDRESS_FAILURES": "1001"}), "ADMIN_SIGNIN_ADDRESS_FAILURES"},
 		{"account limit too low", with(map[string]string{"ADMIN_ACCOUNT_FAILURES": "0"}), "ADMIN_ACCOUNT_FAILURES"},

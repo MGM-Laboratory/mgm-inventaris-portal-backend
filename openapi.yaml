@@ -416,7 +416,7 @@ paths:
         The code `model_retired` means that the model is retired. The field is `items[i].modelId`.
         The code `too_many_items` means that the quantities added together are above `maxItemsPerRequest`. The field is `items`.
         The code `too_many_open_tickets` means that the email or the NIM or NIP already has the most open tickets that the lab allows. The field is `requester`.
-        The codes `not_ub_email`, `required`, `invalid_format`, `out_of_range` and `too_long` can also come back for the other fields.
+        The codes `required`, `too_short`, `invalid_format`, `out_of_range` and `too_long` can also come back for the other fields.
         The check of the quantity runs when the ticket is created, and an approval later can still answer 409 with the code `stock_changed`.
         A limit of the number of new tickets for one IP address applies, and every request counts.
         A request with an `Idempotency-Key` that the session already used returns the first answer and ignores the new body.

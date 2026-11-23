@@ -140,6 +140,81 @@ func LockModels(ctx context.Context, q Querier, ids ...string) (int, error) {
 	return locked, nil
 }
 
+// LockModelsShared takes a share lock on the rows of the models, in the order of the id, and returns for each model that exists
+// whether it is retired. A transaction that creates a ticket takes this lock, so it never runs together with a change of stock that
+// takes the update lock of LockModels, and creations of tickets do not wait for each other. The output column has its own name, so
+// order by id sorts by the uuid column as LockModels does and not by the text. A model that does not exist is missing from the result.
+func LockModelsShared(ctx context.Context, q Querier, ids ...string) (map[string]bool, error) {
+	sorted := slices.Clone(ids)
+	slices.Sort(sorted)
+	sorted = slices.Compact(sorted)
+
+	rows, err := q.Query(ctx, `select id::text as model_id, retired_at is not null from models where id = any($1::text[]::uuid[]) order by id for share`, sorted)
+	if err != nil {
+		return nil, fmt.Errorf("lock the models for share %w", err)
+	}
+
+	defer rows.Close()
+
+	retired := map[string]bool{}
+
+	for rows.Next() {
+		var (
+			id   string
+			gone bool
+		)
+
+		if err := rows.Scan(&id, &gone); err != nil {
+			return nil, fmt.Errorf("read a locked model %w", err)
+		}
+
+		retired[id] = gone
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("lock the models for share %w", err)
+	}
+
+	return retired, nil
+}
+
+// Available returns the available quantity of each model that exists, which is its stock minus the quantity that its tickets hold and
+// never below 0. The caller holds a lock on the models when the answer has to stay true until it commits.
+func Available(ctx context.Context, q Querier, ids ...string) (map[string]int, error) {
+	rows, err := q.Query(ctx, `
+		select m.id::text,
+		       (select count(*) from units u where u.model_id = m.id and u.lifecycle = 'active')::int,
+		       coalesce((select sum(ti.approved_qty) from ticket_items ti join tickets t on t.id = ti.ticket_id
+		                 where ti.model_id = m.id and t.status in (`+holdingStatuses+`)), 0)::int
+		from models m where m.id = any($1::text[]::uuid[])`, ids)
+	if err != nil {
+		return nil, fmt.Errorf("read the available quantities %w", err)
+	}
+
+	defer rows.Close()
+
+	available := map[string]int{}
+
+	for rows.Next() {
+		var (
+			id          string
+			total, held int
+		)
+
+		if err := rows.Scan(&id, &total, &held); err != nil {
+			return nil, fmt.Errorf("read an available quantity %w", err)
+		}
+
+		available[id] = max(total-held, 0)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read the available quantities %w", err)
+	}
+
+	return available, nil
+}
+
 // lockedModel is a model row that the transaction holds.
 type lockedModel struct {
 	ID      string
