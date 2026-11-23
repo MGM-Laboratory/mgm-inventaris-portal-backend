@@ -22,8 +22,8 @@ const (
 	bodyLimit = 64 << 10
 )
 
-// minDurationDays is the shortest loan. The contract shows it in the limits, and it is not a setting.
-const minDurationDays = 1
+// MinDurationDays is the shortest loan. The contract shows it in the limits, and it is not a setting.
+const MinDurationDays = 1
 
 func newApp(trusted []netip.Prefix) *fiber.App {
 	cfg := fiber.Config{
@@ -71,6 +71,7 @@ func NewAPI(cfg config.Config, deps Deps) *fiber.App {
 
 	registerCatalogRoutes(app, deps)
 	registerAdminAssetRoutes(app, deps)
+	registerTicketRoutes(app, cfg, deps)
 
 	return app
 }
@@ -92,7 +93,7 @@ func configHandler(cfg config.Config) fiber.Handler {
 		PublicBaseURL: cfg.PublicBaseURL,
 		Limits: limits{
 			MaxItemsPerRequest: cfg.MaxItemsPerRequest,
-			MinDurationDays:    minDurationDays,
+			MinDurationDays:    MinDurationDays,
 			MaxDurationDays:    cfg.MaxDurationDays,
 			MaxOpenTickets:     cfg.MaxOpenTickets,
 		},

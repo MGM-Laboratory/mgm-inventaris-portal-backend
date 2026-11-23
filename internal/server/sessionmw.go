@@ -22,6 +22,7 @@ type SessionStore interface {
 	CreateAdmin(ctx context.Context, admin session.Admin, kind session.Kind, previous []byte, endOthers bool) (string, session.Session, error)
 	Load(ctx context.Context, token string) (session.Session, error)
 	Delete(ctx context.Context, tokenHash []byte) error
+	AddViewableTicket(ctx context.Context, tokenHash []byte, ticketID string) error
 }
 
 // RateLimiter is the part of the ratelimit package that the routes use.
@@ -36,6 +37,7 @@ type Deps struct {
 	Limiter     RateLimiter
 	Admins      AdminService
 	Catalog     CatalogService
+	Tickets     TicketService
 	Idempotency Idempotency
 }
 

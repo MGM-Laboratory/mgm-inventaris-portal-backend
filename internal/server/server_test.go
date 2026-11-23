@@ -31,6 +31,10 @@ func testConfig() config.Config {
 		MaxOpenTickets:     3,
 		SecureCookie:       true,
 		GuestSigninPerHour: 60,
+
+		TicketCreatePerHour:         20,
+		TicketLookupAddressFailures: 20,
+		TicketLookupNumberFailures:  10,
 	}
 }
 
@@ -559,6 +563,7 @@ func TestAccessLogLabelsTheRoute(t *testing.T) {
 	app := newTestAPI()
 
 	do(t, app, http.MethodGet, "/api/config", nil)
+	do(t, app, http.MethodGet, "/api/tickets/MGM-2611-0001-AAAA/unknown", nil)
 	do(t, app, http.MethodGet, "/api/tickets/MGM-2611-0001-AAAA", nil)
 	do(t, app, http.MethodPost, "/api/config", sameOriginHeaders())
 
@@ -568,7 +573,9 @@ func TestAccessLogLabelsTheRoute(t *testing.T) {
 		t.Fatalf("the log holds the raw path, %s", logged)
 	}
 
-	if strings.Count(logged, `"path":"/api/config"`) != 1 || strings.Count(logged, `"path":"unmatched"`) != 2 {
+	// a route that exists is labeled with its pattern, and an unknown path and a wrong method are unmatched
+	if strings.Count(logged, `"path":"/api/config"`) != 1 || strings.Count(logged, `"path":"/api/tickets/:number"`) != 1 ||
+		strings.Count(logged, `"path":"unmatched"`) != 2 {
 		t.Fatalf("the labels are wrong, %s", logged)
 	}
 }
