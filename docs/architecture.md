@@ -1,6 +1,6 @@
 # Architecture
 
-Status of this page. It describes the design of the service. The code so far holds the settings, the database pool with the migrations, the error body, the request id, the guest session (cookie, Origin and CSRF checks, role guards, rate limit and janitor), the admin accounts (Argon2id passwords, TOTP, recovery codes and the command that creates an admin), the routes `GET /api/config`, `POST /api/session/guest`, `GET /api/session`, `DELETE /api/session`, `POST /api/admin/session`, `GET /api/admin/me`, `POST /api/admin/me/password`, `POST /api/admin/me/totp` and `POST /api/admin/me/recovery-codes`, the catalog and asset routes (`GET /api/categories`, `GET /api/catalog`, `GET /api/assets/{tag}` and the admin routes for categories, models, units, lifecycle steps and unit events), the routes of a borrower for the tickets (`POST /api/tickets`, `GET /api/tickets`, `POST /api/tickets/lookup`, `GET /api/tickets/{number}` and `POST /api/tickets/{number}/cancel`), and the health routes. The admin routes for the tickets and the dashboard are not built yet. Every other statement here is a plan until the code that does it is merged.
+Status of this page. It describes the design of the service. The code so far holds the settings, the database pool with the migrations, the error body, the request id, the guest session (cookie, Origin and CSRF checks, role guards, rate limit and janitor), the admin accounts (Argon2id passwords, TOTP, recovery codes and the command that creates an admin), the routes `GET /api/config`, `POST /api/session/guest`, `GET /api/session`, `DELETE /api/session`, `POST /api/admin/session`, `GET /api/admin/me`, `POST /api/admin/me/password`, `POST /api/admin/me/totp` and `POST /api/admin/me/recovery-codes`, the catalog and asset routes (`GET /api/categories`, `GET /api/catalog`, `GET /api/assets/{tag}` and the admin routes for categories, models, units, lifecycle steps and unit events), the routes of a borrower for the tickets (`POST /api/tickets`, `GET /api/tickets`, `POST /api/tickets/lookup`, `GET /api/tickets/{number}` and `POST /api/tickets/{number}/cancel`), the routes of an admin for the tickets and the dashboard (`GET /api/admin/tickets`, `GET /api/admin/tickets/{number}`, the steps `decision`, `ready`, `handover`, `return` and `cancel`, `GET /api/admin/ticket-events` and `GET /api/admin/dashboard`), and the health routes. Every other statement here is a plan until the code that does it is merged.
 
 ## What the service does
 
@@ -35,7 +35,8 @@ internal/config               settings from the environment
 internal/admin                admin accounts, sign in checks, TOTP enrollment, recovery codes
 internal/admin/admintest      an in-memory admin repository for tests
 internal/catalog              categories, models, units, lifecycle steps, unit events and availability
-internal/ticket               tickets, numbers, the table of statuses, creation, reads and the cancel of a guest
+internal/ticket               tickets, numbers, the table of statuses, creation, reads, the cancel of a guest and the steps of an admin
+internal/dashboard            the counts of the dashboard, which only reads
 internal/idempotency          Idempotency-Key claims and stored answers
 internal/pagination           the signed cursor and the limit of a list
 internal/password             Argon2id hashing with a cap on parallel hashes, and the rules for a new password
@@ -51,9 +52,11 @@ internal/database/migrations  the embedded SQL files of golang-migrate
 internal/database/dbtest      a database for each test, skipped without DATABASE_URL
 ```
 
-Two parts are planned and have no code yet. The admin steps of a ticket (decision, ready, handover, return and cancel) will join `internal/ticket`. The package `internal/mail` will hold a sending interface with no provider yet.
+One part is planned and has no code yet. The package `internal/mail` will hold a sending provider.
 
-A package owns its tables and exposes plain functions. A handler never builds SQL. Other packages call the owner of a table and never write its tables. Two reads cross that line on purpose. The catalog reads the tickets to compute the held quantity of a model, and the ticket package joins the model name to the items of a ticket.
+The ticket package defines the interface `Notifier`, which hears about an approval, a rejection, a ready notice and an admin cancel after the change is committed. `cmd/api` wires an implementation that only writes the kind of notice and the ticket number without its last four characters to the log. It never writes the address, the name or a note. A mail that fails never undoes a step, and a late notice needs a scheduled job that does not exist yet.
+
+A package owns its tables and exposes plain functions. A handler never builds SQL. Other packages call the owner of a table and never write its tables. Four reads cross that line on purpose. The catalog reads the tickets to compute the held quantity of a model. The ticket package joins the model name to the items of a ticket and the tag of a unit to the units of a ticket. The dashboard package reads the tickets, the units and the categories to count them. A handover and a return write the events and the lifecycle of the units through functions of the catalog package, in the transaction of the step, so the ticket package never writes the tables of the assets.
 
 ## Security model
 
@@ -71,7 +74,7 @@ The planned limits of the lab are in [`api.md`](api.md). They are settings, and 
 
 ## Concurrency
 
-Stock rules need locks, because two admins can work on the same model at the same time. A transaction that reads availability and then writes takes a row lock on every model it touches, in the order of the model id. The details are in [`data-model.md`](data-model.md).
+Stock rules need locks, because two admins can work on the same model at the same time. A transaction that reads availability and then writes takes a row lock on every model it touches, in the order of the model id. A step of an admin that touches stock reads the head of the ticket first and refuses a wrong status or version without a lock. It then locks the models, reads the head again, checks the stock, and makes the guarded update of the status. A handover locks the named units after the models. The details are in [`data-model.md`](data-model.md).
 
 ## Deployment
 
