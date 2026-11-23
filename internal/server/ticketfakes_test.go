@@ -49,7 +49,6 @@ type fakeTickets struct {
 	page     catalog.PageRequest
 	number   string
 	email    string
-	found    ticket.Ticket
 }
 
 func (f *fakeTickets) enter(name string) {
