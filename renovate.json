@@ -62,6 +62,7 @@
       "description": "digest and patch updates of the base images of the service image and of the docs image arrive in one pull request, because the Go image and the distroless image are shared and have to move together",
       "matchManagers": ["dockerfile"],
       "matchFileNames": ["Dockerfile", "docs-site/Dockerfile"],
+      "excludePackageNames": ["node"],
       "matchUpdateTypes": ["minor", "patch", "digest", "pin"],
       "groupName": "Image base images"
     },
