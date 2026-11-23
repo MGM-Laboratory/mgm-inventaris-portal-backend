@@ -206,6 +206,8 @@ func ticketCases() []ticketCase {
 		ticketCase{op: create, name: "a repeat while the first runs", as: "guest", method: "POST", path: createPath, body: createJSON, extra: idemHeaders(),
 			arrange: func(e *ticketEnv) { e.keys.err = idempotency.ErrInProgress }, status: 409, code: "request_in_progress",
 			check: func(t *testing.T, e *ticketEnv, _ *http.Response, _ []byte) { ticketCalls(t, e) }},
+		ticketCase{op: create, name: "the numbers of the month are used up", as: "guest", method: "POST", path: createPath, body: createJSON,
+			arrange: ticketFail(ticket.ErrNumbersExhausted), status: 503, code: "unavailable"},
 		ticketCase{op: create, name: "a claim that was taken over", as: "guest", method: "POST", path: createPath, body: createJSON, extra: idemHeaders(),
 			arrange: ticketFail(idempotency.ErrLost), status: 409, code: "request_in_progress",
 			check: func(t *testing.T, e *ticketEnv, _ *http.Response, _ []byte) {
@@ -363,6 +365,19 @@ func ticketCases() []ticketCase {
 			check: func(t *testing.T, e *ticketEnv, res *http.Response, _ []byte) {
 				if len(res.Cookies()) != 0 || e.store.count() != 4 || len(e.store.viewableOf(e.setup.token)) != 0 {
 					t.Fatalf("the setup session changed, %d sessions", e.store.count())
+				}
+			}},
+		ticketCase{op: lookup, name: "a found ticket does not start a session past the sign in limit", as: "none", method: "POST", path: lookupPath, body: lookupJSON,
+			arrange: func(e *ticketEnv) { e.lim.overWhere("guest-signin:") }, status: 429, code: "rate_limited",
+			check: func(t *testing.T, e *ticketEnv, res *http.Response, _ []byte) {
+				if len(res.Cookies()) != 0 || e.store.count() != 4 {
+					t.Fatalf("a session was made, %d sessions", e.store.count())
+				}
+			}},
+		ticketCase{op: lookup, name: "a found ticket of a session does not count against the sign in limit", as: "guest", method: "POST", path: lookupPath, body: lookupJSON, status: 200,
+			check: func(t *testing.T, e *ticketEnv, _ *http.Response, _ []byte) {
+				if len(e.lim.hitsWith("guest-signin:")) != 0 {
+					t.Fatalf("the sign in counter was hit, %v", e.lim.hits)
 				}
 			}},
 		ticketCase{op: lookup, name: "a body that is not JSON", as: "none", method: "POST", path: lookupPath, body: "{", status: 400, code: "bad_request",
@@ -578,14 +593,17 @@ func TestTheLookupCountersHoldNeitherTheSecretNorTheEmail(t *testing.T) {
 	}
 
 	sum := sha256.Sum256([]byte(sampleBorrowerMail))
-	want := []string{"ticket-lookup-address:0.0.0.0", "ticket-lookup-number:2611-0001:" + hex.EncodeToString(sum[:])}
+	// a lookup without a session also counts the new guest session against the sign in limit
+	want := []string{"ticket-lookup-address:0.0.0.0", "ticket-lookup-number:2611-0001:" + hex.EncodeToString(sum[:]), "guest-signin:0.0.0.0"}
 
 	if !slices.Equal(e.lim.hits, want) {
 		t.Fatalf("the counters are %v, want %v", e.lim.hits, want)
 	}
 
+	limits := map[string]int{want[0]: 20, want[1]: 10, want[2]: testConfig().GuestSigninPerHour}
+
 	for key, limit := range e.lim.limits {
-		if limit != map[string]int{want[0]: 20, want[1]: 10}[key] || e.lim.windows[key] != time.Hour {
+		if limit != limits[key] || e.lim.windows[key] != time.Hour {
 			t.Fatalf("the counter %s has the limit %d and the window %v", key, limit, e.lim.windows[key])
 		}
 	}

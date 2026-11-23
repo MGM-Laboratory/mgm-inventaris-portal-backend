@@ -266,13 +266,17 @@ func lookupTicket(cfg config.Config, deps Deps) fiber.Handler {
 }
 
 // showTicketToSession lets the session of the request read the ticket and returns the CSRF token of the session that the request now
-// has. A request without a session starts a guest session with no identity and sets its cookie. A guest session keeps its identity
+// has. A request without a session starts a guest session with no identity and sets its cookie, and it counts against the guest sign in limit. A guest session keeps its identity
 // and gains the ticket. An admin session, also a setup session, stays as it is.
 func showTicketToSession(ctx context.Context, c fiber.Ctx, cfg config.Config, deps Deps, ticketID string) (string, error) {
 	current := currentSession(c)
 
 	switch {
 	case current == nil:
+		if err := countGuestSession(ctx, c, cfg, deps); err != nil {
+			return "", err
+		}
+
 		token, created, err := deps.Sessions.CreateGuest(ctx, nil, nil)
 		if err != nil {
 			return "", dbError("create the guest session", err)

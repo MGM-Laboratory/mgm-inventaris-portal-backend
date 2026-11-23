@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strconv"
 
 	"github.com/gofiber/fiber/v3"
@@ -11,6 +12,7 @@ import (
 	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/idempotency"
 	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/pagination"
 	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/session"
+	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/ticket"
 )
 
 const (
@@ -142,6 +144,13 @@ func catalogError(what string, err error) error {
 		return e
 	case errors.Is(err, idempotency.ErrInProgress), errors.Is(err, idempotency.ErrLost):
 		return NewError(CodeRequestInProgress)
+	case errors.Is(err, ticket.ErrNumbersExhausted):
+		slog.Error("the ticket numbers of this month are used up")
+
+		e := NewError(CodeUnavailable)
+		e.Message = "No new request can be taken now. Try again later."
+
+		return e
 	default:
 		return dbError(what, err)
 	}
