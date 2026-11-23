@@ -18,7 +18,7 @@ The backend of the LabMGM inventory portal, written in Go with PostgreSQL. The f
 
 - Go 1.27, Fiber v3, pgx v5 and PostgreSQL 17, with golang-migrate for the schema.
 - A container image for linux/amd64 and linux/arm64 on a distroless base, published to GitHub Container Registry as `ghcr.io/mgm-laboratory/mgm-inventaris-portal-backend`. See [`docs/deployment.md`](docs/deployment.md).
-- A second image, the API docs site, built from `openapi.yaml` and published as `ghcr.io/mgm-laboratory/mgm-inventaris-portal-docs`. It serves the docs at `inventaris-docs.labmgm.org`.
+- A second image, the API docs site, built from `openapi.yaml` and served by a small Go program in `cmd/docs-server` on a distroless base. It is published as `ghcr.io/mgm-laboratory/mgm-inventaris-portal-docs` and serves the docs at `inventaris-docs.labmgm.org`.
 - CI, release automation and dependency updates on GitHub Actions, Release Please and Renovate. See [`docs/ci-cd.md`](docs/ci-cd.md).
 
 ## Quick start
@@ -93,6 +93,7 @@ The service reads these environment variables at start. A bad value stops the st
 
 ```text
 cmd/api/          The entry point of the service, with the commands create-admin, reset-totp and healthcheck
+cmd/docs-server/  The server of the API docs site image, which serves the page that docs-site builds
 internal/         The settings, the HTTP servers, the sessions, the admin accounts, the catalog of assets, the pagination cursor, the idempotency keys, the password, TOTP and secret encryption code, the rate limits, the janitor, the database pool, the migrations and the test helpers
 docs/             Design pages, CI/CD documentation and the deployment guide
 deploy/           The production example of the compose file, its settings template and the rolling update script, and in docs/ the example of the docs site copy
