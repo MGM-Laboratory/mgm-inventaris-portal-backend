@@ -2,9 +2,11 @@ package ticket_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -196,10 +198,20 @@ func TestAnApprovalHoldsTheApprovedQuantityAndTheApprovedDays(t *testing.T) {
 	}
 
 	// the borrower reads the same ticket without the name of the admin
-	for _, h := range mustGet(t, e, made.Number).History {
-		if h.ActorKind == "admin" && h.Status != "disetujui" {
-			t.Fatalf("the history of the borrower is %+v", h)
-		}
+	seen, err := e.tickets.Get(ctx, []string{made.ID}, made.Number)
+	if err != nil {
+		t.Fatalf("the borrower reads the ticket %v", err)
+	}
+
+	approved := false
+
+	for _, h := range seen.History {
+		approved = approved || (h.ActorKind == "admin" && h.Status == "disetujui")
+	}
+
+	body, err := json.Marshal(seen)
+	if err != nil || !approved || strings.Contains(string(body), "actorName") {
+		t.Fatalf("the borrower history has the approval %v and the body is %s, %v", approved, body, err)
 	}
 }
 
@@ -339,10 +351,21 @@ func TestAnApprovalReadsTheStockAfterTheLockAndNotBefore(t *testing.T) {
 		done <- err
 	}()
 
-	select {
-	case err := <-done:
-		t.Fatalf("the approval did not wait for the lock and gave %v", err)
-	case <-time.After(300 * time.Millisecond):
+	// the approval has to be seen waiting for the lock before the stock change commits, so the test cannot pass by a late start
+	deadline := time.After(10 * time.Second)
+
+	for waiting := false; !waiting; {
+		select {
+		case err := <-done:
+			t.Fatalf("the approval did not wait for the lock and gave %v", err)
+		case <-deadline:
+			t.Fatal("the approval was never seen waiting for a lock")
+		case <-time.After(20 * time.Millisecond):
+		}
+
+		if err := e.pool.QueryRow(ctx, `select count(*) > 0 from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'`).Scan(&waiting); err != nil {
+			t.Fatalf("read the lock waits %v", err)
+		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {

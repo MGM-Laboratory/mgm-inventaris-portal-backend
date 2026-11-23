@@ -111,7 +111,7 @@ func TestTheCountsFollowTheTicketsTheUnitsAndTheCategories(t *testing.T) {
 
 	audio := f.category("Audio", "blue")
 	video := f.category("Video", "red")
-	f.category("Empty", "green")
+	empty := f.category("Empty", "green")
 
 	headset := f.model(audio, "Example headset", "AUD")
 	camera := f.model(video, "Example camera", "VID")
@@ -164,7 +164,7 @@ func TestTheCountsFollowTheTicketsTheUnitsAndTheCategories(t *testing.T) {
 
 	want := []dashboard.CategoryCounts{
 		{CategoryID: audio, Name: "Audio", Tone: "blue", Total: 4, Units: dashboard.Units{Available: 1, Borrowed: 1, Maintenance: 1, Lost: 1}},
-		{Name: "Empty", Tone: "green"},
+		{CategoryID: empty, Name: "Empty", Tone: "green"},
 		{CategoryID: video, Name: "Video", Tone: "red", Total: 3, Units: dashboard.Units{Available: 1, Borrowed: 1, Retired: 1}},
 	}
 
@@ -173,10 +173,6 @@ func TestTheCountsFollowTheTicketsTheUnitsAndTheCategories(t *testing.T) {
 	}
 
 	for i, w := range want {
-		if w.CategoryID == "" {
-			w.CategoryID = got.ByCategory[i].CategoryID
-		}
-
 		if got.ByCategory[i] != w {
 			t.Errorf("the category %d is %+v, want %+v", i, got.ByCategory[i], w)
 		}
