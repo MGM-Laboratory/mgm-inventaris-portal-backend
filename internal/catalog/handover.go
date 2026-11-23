@@ -147,6 +147,15 @@ func RecordReturn(ctx context.Context, q Querier, at time.Time, adminID, ticketI
 		return nil
 	}
 
+	// the rows are locked in the order of the id, as LockUnits does, so a handover that names the same units cannot deadlock with this
+	var locked int
+
+	err = q.QueryRow(ctx, `
+		select count(*)::int from (select id from units where id = any($1::text[]::uuid[]) order by id for update) x`, changedIDs).Scan(&locked)
+	if err != nil {
+		return fmt.Errorf("lock the returned units %w", err)
+	}
+
 	_, err = q.Exec(ctx, `
 		update units u set lifecycle = t.outcome, lifecycle_note = t.note
 		from unnest($1::text[]::uuid[], $2::text[], $3::text[]) as t(unit_id, outcome, note)
