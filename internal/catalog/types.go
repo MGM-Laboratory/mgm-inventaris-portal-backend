@@ -18,6 +18,13 @@ const (
 	LifecycleRetired     = "retired"
 )
 
+// What an admin finds when a unit comes back from a loan. The outcomes maintenance and lost are also lifecycle values.
+const (
+	ReturnOK          = "ok"
+	ReturnMaintenance = LifecycleMaintenance
+	ReturnLost        = LifecycleLost
+)
+
 // The statuses that a unit shows.
 const (
 	StatusAvailable = "available"
@@ -96,12 +103,18 @@ const (
 	RuleUnitHeld
 	// RuleStockChanged is a change that would leave less stock than the tickets hold.
 	RuleStockChanged
+	// RuleVersionConflict is a request that carries an older version of a ticket than the stored one.
+	RuleVersionConflict
+	// RuleUnitUnavailable is a unit at a handover that is not active, not of a model of the ticket, or in an open ticket.
+	RuleUnitUnavailable
 )
 
-// RuleError is a request that the state of the data refuses. Message is safe to show to a client.
+// RuleError is a request that the state of the data refuses. Message is safe to show to a client. Details names the fields that the
+// rule is about, and most rules have none.
 type RuleError struct {
 	Kind    RuleKind
 	Message string
+	Details []FieldError
 }
 
 func (e *RuleError) Error() string {
