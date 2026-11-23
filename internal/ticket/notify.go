@@ -3,6 +3,8 @@ package ticket
 import (
 	"context"
 	"log/slog"
+	"strings"
+	"time"
 )
 
 // WithNotifier sets the notifier that hears about the decisions, the ready notices and the cancels of an admin. A store with none tells
@@ -22,7 +24,24 @@ func (s *Store) notify(ctx context.Context, kind NoticeKind, t AdminTicket) {
 
 	notice := Notice{Kind: kind, Number: t.Number, Name: t.Requester.Name, Email: t.Requester.Email, Note: t.DecisionNote}
 
-	if err := s.notifier.Notify(context.WithoutCancel(ctx), notice); err != nil {
-		slog.Error("a notice of a ticket failed", "kind", kind, "number", t.Number)
+	// a slow mail provider must not hold the answer of a step that is already committed
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), notifyTimeout)
+	defer cancel()
+
+	if err := s.notifier.Notify(ctx, notice); err != nil {
+		slog.Error("a notice of a ticket failed", "kind", kind, "ticket", WithoutSecret(t.Number))
 	}
+}
+
+// notifyTimeout is the time that a notifier has to send one notice.
+const notifyTimeout = 5 * time.Second
+
+// WithoutSecret returns a ticket number without its last part. That part is the secret that a borrower needs for a lookup, so it
+// never goes into a log.
+func WithoutSecret(number string) string {
+	if cut := strings.LastIndex(number, "-"); cut > 0 {
+		return number[:cut]
+	}
+
+	return number
 }

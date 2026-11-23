@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"log/slog"
-	"strings"
 
 	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/ticket"
 )
@@ -14,12 +13,7 @@ import (
 type logNotifier struct{}
 
 func (logNotifier) Notify(ctx context.Context, notice ticket.Notice) error {
-	number := notice.Number
-	if cut := strings.LastIndex(number, "-"); cut > 0 {
-		number = number[:cut]
-	}
-
-	slog.InfoContext(ctx, "a ticket notice would be sent", "kind", notice.Kind, "ticket", number)
+	slog.InfoContext(ctx, "a ticket notice would be sent", "kind", notice.Kind, "ticket", ticket.WithoutSecret(notice.Number))
 
 	return nil
 }
