@@ -225,6 +225,39 @@ func (s *Store) Delete(ctx context.Context, tokenHash []byte) error {
 	return nil
 }
 
+// MaxViewableTickets is the most tickets that one session may read, as the check constraint of the table says. A session that adds
+// one more forgets the oldest.
+const MaxViewableTickets = 20
+
+// AddViewableTicket lets the session read the ticket. The id goes to the end of the list, a ticket that was in the list moves there,
+// and the oldest ids beyond MaxViewableTickets drop out. It takes a pool or a transaction, so the owner of the tickets can call it in
+// the transaction that creates one. It returns false when the session is gone, which is not an error for the caller.
+func AddViewableTicket(ctx context.Context, db DB, tokenHash []byte, ticketID string) (bool, error) {
+	// the subquery reads the list of the row that the statement updates, and a concurrent update of the same row is read again after
+	// its lock, so two requests of one session never lose an id
+	tag, err := db.Exec(ctx, `
+		update sessions set viewable_tickets = (
+			select coalesce(array_agg(kept.id order by kept.n), '{}'::uuid[])
+			from (
+				select t.id, t.n from unnest(array_remove(sessions.viewable_tickets, $2::uuid) || $2::uuid) with ordinality as t(id, n)
+				order by t.n desc limit $3
+			) kept
+		)
+		where token_hash = $1`, tokenHash, ticketID, MaxViewableTickets)
+	if err != nil {
+		return false, fmt.Errorf("add the viewable ticket %w", err)
+	}
+
+	return tag.RowsAffected() == 1, nil
+}
+
+// AddViewableTicket lets the session of the hash read the ticket. A session that is gone is not an error.
+func (s *Store) AddViewableTicket(ctx context.Context, tokenHash []byte, ticketID string) error {
+	_, err := AddViewableTicket(ctx, s.db, tokenHash, ticketID)
+
+	return err
+}
+
 // DeleteExpired removes every session that is past its absolute limit or its idle limit, with the same rules as Load.
 func (s *Store) DeleteExpired(ctx context.Context) (int64, error) {
 	now := s.moment()
