@@ -81,6 +81,11 @@ linters:
         text: G704
         linters:
           - gosec
+      # the same for the docs server, which asks its own address from the setting DOCS_ADDR
+      - path: ^cmd/docs-server/healthcheck\.go$
+        text: G704
+        linters:
+          - gosec
       # a test may print, and main decides how the program ends and what it prints
       - path: (_test\.go|^cmd/)
         linters:
