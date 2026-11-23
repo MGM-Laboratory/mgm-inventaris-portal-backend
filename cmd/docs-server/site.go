@@ -205,25 +205,36 @@ func serveAsset(w http.ResponseWriter, r *http.Request, file *asset) {
 	_, _ = w.Write(body)
 }
 
-// acceptsGzip reports whether the Accept-Encoding header lists gzip with a quality above zero. A malformed quality counts as no.
+// acceptsGzip reports whether the client accepts gzip. An entry for gzip decides by its quality. Without one, the wildcard decides, as
+// RFC 9110 asks, so "*" accepts gzip too. A quality of zero or a malformed quality counts as no.
 func acceptsGzip(header string) bool {
+	wildcard := false
+
 	for part := range strings.SplitSeq(header, ",") {
 		coding, params, _ := strings.Cut(strings.TrimSpace(part), ";")
-		if !strings.EqualFold(strings.TrimSpace(coding), "gzip") {
-			continue
+		coding = strings.TrimSpace(coding)
+
+		switch {
+		case strings.EqualFold(coding, "gzip"):
+			return qualityAboveZero(params)
+		case coding == "*":
+			wildcard = qualityAboveZero(params)
 		}
-
-		quality, found := strings.CutPrefix(strings.ToLower(strings.TrimSpace(params)), "q=")
-		if !found {
-			return true
-		}
-
-		value, err := strconv.ParseFloat(strings.TrimSpace(quality), 64)
-
-		return err == nil && value > 0
 	}
 
-	return false
+	return wildcard
+}
+
+// qualityAboveZero reads the parameters after a coding. No quality means 1, and a quality that does not parse counts as zero.
+func qualityAboveZero(params string) bool {
+	quality, found := strings.CutPrefix(strings.ToLower(strings.TrimSpace(params)), "q=")
+	if !found {
+		return true
+	}
+
+	value, err := strconv.ParseFloat(strings.TrimSpace(quality), 64)
+
+	return err == nil && value > 0
 }
 
 // etagMatches compares an If-None-Match header with a tag the weak way, as RFC 9110 asks for this header.

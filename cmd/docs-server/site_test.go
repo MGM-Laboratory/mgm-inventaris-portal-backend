@@ -205,6 +205,11 @@ func TestGzipNegotiation(t *testing.T) {
 		{"bad quality", "gzip;q=high", false},
 		{"identity", "identity", false},
 		{"another coding", "br, deflate", false},
+		{"wildcard", "*", true},
+		{"wildcard with identity refused", "*;q=1, identity;q=0", true},
+		{"wildcard refused", "*;q=0", false},
+		{"explicit gzip refusal beats the wildcard", "gzip;q=0, *", false},
+		{"explicit gzip beats a refused wildcard", "*;q=0, gzip", true},
 	}
 
 	for _, tc := range tests {
