@@ -821,11 +821,11 @@ func TestAReturnClosesTheRowsAppliesTheOutcomesAndReleasesTheHold(t *testing.T) 
 		t.Fatalf("the returned unit is %+v, %v", back, err)
 	}
 
-	if events := e.unitEvents(units[1].Tag); !slices.Equal(events, []string{"lost", "returned", "handed_over", "added"}) {
+	if events := e.stepEvents(units[1].Tag); !slices.Equal(events, []string{"lost", "returned", "handed_over"}) {
 		t.Fatalf("the events of the lost unit are %v", events)
 	}
 
-	if events := e.unitEvents(units[0].Tag); !slices.Equal(events, []string{"returned", "handed_over", "added"}) {
+	if events := e.stepEvents(units[0].Tag); !slices.Equal(events, []string{"returned", "handed_over"}) {
 		t.Fatalf("the events of the returned unit are %v", events)
 	}
 
@@ -862,7 +862,7 @@ func TestAReturnWithAMaintenanceOutcomeTakesTheUnitOutOfTheStock(t *testing.T) {
 		t.Fatalf("the unit is %+v, %v", unit, err)
 	}
 
-	if events := e.unitEvents(units[0].Tag); !slices.Equal(events, []string{"maintenance", "returned", "handed_over", "added"}) {
+	if events := e.stepEvents(units[0].Tag); !slices.Equal(events, []string{"maintenance", "returned", "handed_over"}) {
 		t.Fatalf("the events are %v", events)
 	}
 
@@ -1327,4 +1327,12 @@ func TestTheBorrowerHearsOnlyOfChangesThatCommitted(t *testing.T) {
 	if first.Number != made.Number || first.Email == nil || *first.Email != b.identity.Email || first.Name == nil || *first.Name != b.identity.Name {
 		t.Fatalf("the first notice is %+v", first)
 	}
+}
+
+// stepEvents lists the events of a unit that the steps of a ticket wrote, newest first. The event added is left out, because the
+// database writes its time with its own clock while the steps use the clock of the test, so the two cannot be ordered.
+func (e *env) stepEvents(tag string) []string {
+	e.t.Helper()
+
+	return slices.DeleteFunc(e.unitEvents(tag), func(action string) bool { return action == "added" })
 }
