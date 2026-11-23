@@ -261,10 +261,28 @@ func (s *Store) ListAdmin(ctx context.Context, f AdminFilter, req catalog.PageRe
 		statuses = q.statuses
 	}
 
+	// the page, the total and the details come from one snapshot, so a step that commits in between cannot make the total smaller
+	// than the page
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return pagination.Page[AdminSummary]{}, fmt.Errorf("begin the read of the tickets %w", err)
+	}
+
+	defer func() {
+		rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), rollbackTimeout)
+		defer cancel()
+
+		_ = tx.Rollback(rollbackCtx)
+	}()
+
+	if _, err := tx.Exec(ctx, `set transaction isolation level repeatable read, read only`); err != nil {
+		return pagination.Page[AdminSummary]{}, fmt.Errorf("set the isolation of the read %w", err)
+	}
+
 	now := s.now()
 	filterArgs := []any{q.text, statuses, today(now), dateArg(q.pickupFrom), dateArg(q.pickupTo), dateArg(q.dueFrom), dateArg(q.dueTo)}
 
-	rows, err := s.db.Query(ctx, `select `+ticketColumns+` from tickets t`+adminFilterSQL+`
+	rows, err := tx.Query(ctx, `select `+ticketColumns+` from tickets t`+adminFilterSQL+`
 		  and ($8::timestamptz is null or (t.created_at, t.id) < ($8::timestamptz, $9::uuid))
 		order by t.created_at desc, t.id desc limit $10`, append(slices.Clone(filterArgs), afterAt, afterID, req.Limit+1)...)
 	if err != nil {
@@ -294,7 +312,7 @@ func (s *Store) ListAdmin(ctx context.Context, f AdminFilter, req catalog.PageRe
 
 	var total int
 
-	err = s.db.QueryRow(ctx, `select count(*)::int from tickets t`+adminFilterSQL, filterArgs...).Scan(&total)
+	err = tx.QueryRow(ctx, `select count(*)::int from tickets t`+adminFilterSQL, filterArgs...).Scan(&total)
 	if err != nil {
 		return pagination.Page[AdminSummary]{}, fmt.Errorf("count the tickets %w", err)
 	}
@@ -304,7 +322,7 @@ func (s *Store) ListAdmin(ctx context.Context, f AdminFilter, req catalog.PageRe
 	items := []AdminSummary{}
 
 	if len(tickets) > 0 {
-		if items, err = fillAdmin(ctx, s.db, tickets); err != nil {
+		if items, err = fillAdmin(ctx, tx, tickets); err != nil {
 			return pagination.Page[AdminSummary]{}, err
 		}
 	}
