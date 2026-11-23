@@ -2,23 +2,42 @@ package ticket
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/catalog"
 	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/pagination"
 )
 
-const rollbackTimeout = 5 * time.Second
+const (
+	rollbackTimeout = 5 * time.Second
+
+	// uniqueViolation is the SQLSTATE of a broken unique index, and openUnitKey is the index that lets a unit sit in one open row only.
+	uniqueViolation = "23505"
+	openUnitKey     = "ticket_units_open_unit_key"
+)
+
+// violationOf returns the SQLSTATE and the constraint of a PostgreSQL error in the chain, or empty texts.
+func violationOf(err error) (code, constraint string) {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code, pgErr.ConstraintName
+	}
+
+	return "", ""
+}
 
 // Store reads and writes the tables of the tickets. It takes the time from a function, so a test passes its own clock.
 type Store struct {
-	db     catalog.DB
-	codec  *pagination.Codec
-	now    func() time.Time
-	limits Limits
+	db       catalog.DB
+	codec    *pagination.Codec
+	now      func() time.Time
+	limits   Limits
+	notifier Notifier
 }
 
 // NewStore returns a store. The signer makes and checks the cursors. A nil clock means time.Now.
@@ -84,6 +103,11 @@ type move struct {
 	Version *int
 	// Note is stored as the decision note and in the history entry. A nil note leaves the decision note as it is.
 	Note *string
+	// HistoryNote is stored in the history entry only, and Note wins when both are set. A return uses it, because the notes of a return
+	// are not the decision note.
+	HistoryNote *string
+	// ApprovedDays sets the approved days of the loan, and nil leaves them as they are.
+	ApprovedDays *int
 }
 
 // moveStatus applies the guarded change and writes the history entry in the same transaction. It returns false when no row matched,
@@ -92,9 +116,10 @@ func (s *Store) moveStatus(ctx context.Context, tx pgx.Tx, m move) (bool, error)
 	at := s.moment()
 
 	tag, err := tx.Exec(ctx, `
-		update tickets set status = $3, version = version + 1, decision_note = coalesce($4::text, decision_note)
+		update tickets set status = $3, version = version + 1, decision_note = coalesce($4::text, decision_note),
+		       approved_duration_days = coalesce($6::int, approved_duration_days)
 		where id = $1::uuid and status = any($2::text[]) and ($5::int is null or version = $5::int)`,
-		m.ID, m.From, m.To, m.Note, m.Version)
+		m.ID, m.From, m.To, m.Note, m.Version, m.ApprovedDays)
 	if err != nil {
 		return false, fmt.Errorf("change the status %w", err)
 	}
@@ -103,9 +128,14 @@ func (s *Store) moveStatus(ctx context.Context, tx pgx.Tx, m move) (bool, error)
 		return false, nil
 	}
 
+	historyNote := m.Note
+	if historyNote == nil {
+		historyNote = m.HistoryNote
+	}
+
 	_, err = tx.Exec(ctx, `
 		insert into ticket_history (ticket_id, at, status, actor_kind, admin_id, note) values ($1::uuid, $2, $3, $4, $5::uuid, $6)`,
-		m.ID, at, m.To, m.Actor, m.AdminID, m.Note)
+		m.ID, at, m.To, m.Actor, m.AdminID, historyNote)
 	if err != nil {
 		return false, fmt.Errorf("write the history %w", err)
 	}
