@@ -54,7 +54,9 @@ LABEL org.opencontainers.image.title="mgm-inventaris-portal-docs" \
       org.opencontainers.image.revision="${REVISION}"
 
 COPY --from=server --chmod=0755 /out/docs-server /docs-server
-COPY --from=page --chmod=0644 /src/docs-site/dist/index.html /src/docs-site/dist/index.html.gz /src/docs-site/dist/csp.txt /src/openapi.yaml /site/
+# No --chmod here. It would also apply to the folder that this line creates, and a folder without the execute bit cannot be entered by
+# the exporter of the repeatable build. The files are read only for the server user (0644 by the umask of the build stages).
+COPY --from=page /src/docs-site/dist/index.html /src/docs-site/dist/index.html.gz /src/docs-site/dist/csp.txt /src/openapi.yaml /site/
 
 # The server reads these two settings. The files are read once at start, and the folder is the only place that it reads from.
 ENV DOCS_ADDR=:8080 \
