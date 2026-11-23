@@ -13,7 +13,8 @@ WORKDIR /src/docs-site
 COPY docs-site/package.json docs-site/package-lock.json ./
 RUN npm ci --ignore-scripts --no-audit --no-fund
 
-COPY redocly.yaml openapi.yaml /src/
+# The mode is set because the files come from the checkout, and a mode of 0600 there would stop the server user from reading the spec.
+COPY --chmod=0644 redocly.yaml openapi.yaml /src/
 COPY docs-site/finish-page.mjs ./
 
 # Builds dist/index.html with the viewer inside it, then writes the gzip copy and the Content-Security-Policy file. The build fails when

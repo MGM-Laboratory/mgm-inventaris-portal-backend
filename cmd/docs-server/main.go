@@ -34,7 +34,7 @@ const (
 	readTimeout       = 10 * time.Second
 	writeTimeout      = time.Minute
 	idleTimeout       = 30 * time.Second
-	maxHeaderBytes    = 8 << 10
+	maxHeaderBytes    = 16 << 10
 )
 
 func main() {
