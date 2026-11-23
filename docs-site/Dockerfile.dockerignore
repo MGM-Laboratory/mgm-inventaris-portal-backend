@@ -2,8 +2,10 @@
 *
 !openapi.yaml
 !redocly.yaml
+!go.mod
+!go.sum
+!cmd/docs-server
+cmd/docs-server/*_test.go
 !docs-site/package.json
 !docs-site/package-lock.json
 !docs-site/finish-page.mjs
-!docs-site/nginx.conf
-!docs-site/headers.conf

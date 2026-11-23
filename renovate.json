@@ -51,26 +51,19 @@
       "enabled": false
     },
     {
-      "description": "a new minor or major Go image needs a matching go directive in go.mod, so it waits for approval on the dependency dashboard",
+      "description": "a new minor or major Go image needs a matching go directive in go.mod, so it waits for approval on the dependency dashboard. The docs image builds its server with the same Go image",
       "matchManagers": ["dockerfile"],
-      "matchFileNames": ["Dockerfile"],
+      "matchFileNames": ["Dockerfile", "docs-site/Dockerfile"],
       "matchPackageNames": ["golang"],
       "matchUpdateTypes": ["major", "minor"],
       "dependencyDashboardApproval": true
     },
     {
-      "description": "digest and patch updates of the base images of the service image arrive in one pull request",
+      "description": "digest and patch updates of the base images of the service image and of the docs image arrive in one pull request, because the Go image and the distroless image are shared and have to move together",
       "matchManagers": ["dockerfile"],
-      "matchFileNames": ["Dockerfile"],
+      "matchFileNames": ["Dockerfile", "docs-site/Dockerfile"],
       "matchUpdateTypes": ["minor", "patch", "digest", "pin"],
       "groupName": "Image base images"
-    },
-    {
-      "description": "digest and patch updates of the base images of the docs image arrive in one pull request",
-      "matchManagers": ["dockerfile"],
-      "matchFileNames": ["docs-site/Dockerfile"],
-      "matchUpdateTypes": ["minor", "patch", "digest", "pin"],
-      "groupName": "Docs image base images"
     },
     {
       "description": "a new major Node image changes the toolchain that builds the docs page, so it waits for approval on the dependency dashboard",
@@ -78,14 +71,6 @@
       "matchFileNames": ["docs-site/Dockerfile"],
       "matchPackageNames": ["node"],
       "matchUpdateTypes": ["major"],
-      "dependencyDashboardApproval": true
-    },
-    {
-      "description": "the docs image follows the stable line of nginx, so a new minor or major image, which can be the mainline, waits for approval on the dependency dashboard",
-      "matchManagers": ["dockerfile"],
-      "matchFileNames": ["docs-site/Dockerfile"],
-      "matchPackageNames": ["nginxinc/nginx-unprivileged"],
-      "matchUpdateTypes": ["major", "minor"],
       "dependencyDashboardApproval": true
     },
     {

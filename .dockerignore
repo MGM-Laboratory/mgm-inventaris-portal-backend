@@ -16,6 +16,7 @@ coverage.*
 docs
 deploy
 docs-site
+cmd/docs-server
 openapi.yaml
 redocly.yaml
 compose*.yml

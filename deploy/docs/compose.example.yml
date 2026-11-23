@@ -25,17 +25,16 @@ services:
     ports:
       - "${DOCS_BIND:-127.0.0.1}:${DOCS_PORT:?set DOCS_PORT in the env file}:8080"
     read_only: true
-    # nginx writes its process id file and its temporary paths to /tmp and nowhere else. The image runs as the user 101, so the
-    # mode lets that user write there.
-    tmpfs:
-      - /tmp:size=8m,mode=1777
+    # The server reads its files once at start and writes nothing to disk, so the root file system needs no writable path and there is no
+    # tmpfs.
     cap_drop:
       - ALL
     security_opt:
       - no-new-privileges:true
-    # The image has the same check. It is repeated here so the state of the copy does not depend on the image that was pulled.
+    # The image has the same check. It is repeated here so the state of the copy does not depend on the image that was pulled. The image
+    # has no shell and no curl, so the server checks itself with GET /healthz on the loopback address.
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      test: ["CMD", "/docs-server", "healthcheck"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -45,4 +44,4 @@ services:
       resources:
         limits:
           cpus: "${DOCS_CPUS:-0.50}"
-          memory: ${DOCS_MEMORY_LIMIT:-64m}
+          memory: ${DOCS_MEMORY_LIMIT:-32m}
