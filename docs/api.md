@@ -78,13 +78,13 @@ These are settings. The lab decides the final values, and the values here are th
 
 The guest sign in form and the ticket form have a hidden field named `website`. A client leaves it empty. A request that fills it gets a normal looking answer and creates nothing.
 
-The counters cover only the sign in routes, the ticket creation, the ticket lookup and the failed password or code checks on the account routes of an admin. A campus network can share one address, so the admin limit for an address counts only failures. The key of a lookup limit is the part `yymm-nnnn` of the number together with a hash of the submitted email, because the last part of the number is the secret and a stranger must not be able to block the lookup of a real borrower.
+The counters cover only the sign in routes, the ticket creation, the ticket lookup and the failed password or code checks on the account routes of an admin. A campus network can share one address, so the admin limit for an address counts only failures. The key of a lookup limit is the part `yymm-nnnn` of the number together with a hash of the submitted email, because the last part of the number is the secret so a stranger who does not know the email cannot block the lookup of a real borrower.
 
 ## Roles
 
 | Role | How | Can |
 | --- | --- | --- |
-| Anyone | No session | Read the public settings, the public page of an asset, and look up a ticket with its number and email. A lookup starts a guest session without an identity |
+| Anyone | No session | Read the public settings, the public page of an asset, and look up a ticket with its number and email. A lookup starts a guest session without an identity, and that new session counts against the guest sign in limit of the address |
 | Guest | A guest session | Read the catalog, create tickets (needs the identity), read and cancel the tickets of the session |
 | Admin | An admin session | The routes that read, and all admin routes. An admin session cannot create or cancel a ticket as a guest |
 
