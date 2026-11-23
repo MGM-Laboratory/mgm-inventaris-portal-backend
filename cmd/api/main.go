@@ -17,6 +17,7 @@ import (
 	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/admin"
 	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/catalog"
 	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/config"
+	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/dashboard"
 	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/database"
 	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/idempotency"
 	"github.com/MGM-Laboratory/mgm-inventaris-portal-backend/internal/janitor"
@@ -120,15 +121,17 @@ func run(level *slog.LevelVar) error {
 
 	tickets := ticket.NewStore(pool, box, time.Now, ticket.Limits{
 		MaxItems: cfg.MaxItemsPerRequest, MinDays: server.MinDurationDays, MaxDays: cfg.MaxDurationDays, MaxOpen: cfg.MaxOpenTickets,
-	})
+	}).WithNotifier(logNotifier{})
 
 	api := server.NewAPI(cfg, server.Deps{
-		Sessions:    session.NewStore(pool, time.Now),
-		Limiter:     ratelimit.New(pool, time.Now),
-		Admins:      admins,
-		Catalog:     catalog.NewStore(pool, box, time.Now),
-		Tickets:     tickets,
-		Idempotency: idempotency.NewStore(pool, time.Now),
+		Sessions:     session.NewStore(pool, time.Now),
+		Limiter:      ratelimit.New(pool, time.Now),
+		Admins:       admins,
+		Catalog:      catalog.NewStore(pool, box, time.Now),
+		Tickets:      tickets,
+		AdminTickets: tickets,
+		Dashboard:    dashboard.NewStore(pool, time.Now),
+		Idempotency:  idempotency.NewStore(pool, time.Now),
 	})
 	health := server.NewHealth(pool, func() server.PoolStats {
 		stat := pool.Stat()

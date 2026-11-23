@@ -117,6 +117,9 @@ var ruleCodes = map[catalog.RuleKind]Code{
 	catalog.RuleStatusConflict: CodeStatusConflict,
 	catalog.RuleUnitHeld:       CodeUnitHeld,
 	catalog.RuleStockChanged:   CodeStockChanged,
+
+	catalog.RuleVersionConflict: CodeVersionConflict,
+	catalog.RuleUnitUnavailable: CodeUnitUnavailable,
 }
 
 // catalogError maps the error of the catalog or of the idempotency store to the answer of the contract. An error that no rule names is
@@ -138,7 +141,7 @@ func catalogError(what string, err error) error {
 	case errors.As(err, &dup):
 		return duplicateError(dup)
 	case errors.As(err, &rule):
-		e := NewError(ruleCodes[rule.Kind])
+		e := NewError(ruleCodes[rule.Kind], fieldDetails(rule.Details)...)
 		e.Message = rule.Message
 
 		return e
