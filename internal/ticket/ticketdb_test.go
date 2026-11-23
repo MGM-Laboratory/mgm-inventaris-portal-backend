@@ -122,12 +122,22 @@ func (e *env) model(name, prefix string, units int) (catalog.Model, []catalog.Un
 		e.t.Fatalf("add the model %v", err)
 	}
 
-	list, err := e.catalog.CreateUnits(context.Background(), m.ID, e.adminID, catalog.UnitInput{Count: ptr(units), Condition: "Good", Place: "Example shelf"}, nil)
-	if err != nil {
-		e.t.Fatalf("add the units %v", err)
+	// one request adds at most MaxUnitsPerRequest units, so a larger stock comes in batches
+	var all []catalog.Unit
+
+	for left := units; left > 0; {
+		batch := min(left, catalog.MaxUnitsPerRequest)
+
+		list, err := e.catalog.CreateUnits(context.Background(), m.ID, e.adminID, catalog.UnitInput{Count: ptr(batch), Condition: "Good", Place: "Example shelf"}, nil)
+		if err != nil {
+			e.t.Fatalf("add the units %v", err)
+		}
+
+		all = append(all, list.Items...)
+		left -= batch
 	}
 
-	return m, list.Items
+	return m, all
 }
 
 func (e *env) available(modelID string) (held, available int) {
