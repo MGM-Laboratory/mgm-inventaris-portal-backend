@@ -70,43 +70,11 @@ func fillDetails(ctx context.Context, q catalog.Querier, tickets []Ticket) error
 		return nil
 	}
 
-	ids := make([]string, 0, len(tickets))
-	at := make(map[string]int, len(tickets))
-
-	for i, t := range tickets {
-		ids = append(ids, t.ID)
-		at[t.ID] = i
+	if err := fillItems(ctx, q, tickets); err != nil {
+		return err
 	}
 
-	itemRows, err := q.Query(ctx, `
-		select ti.ticket_id::text, ti.model_id::text, m.name, ti.qty, ti.approved_qty
-		from ticket_items ti join models m on m.id = ti.model_id
-		where ti.ticket_id = any($1::text[]::uuid[])
-		order by ti.ticket_id, lower(m.name), ti.model_id`, ids)
-	if err != nil {
-		return fmt.Errorf("read the items %w", err)
-	}
-
-	defer itemRows.Close()
-
-	for itemRows.Next() {
-		var (
-			ticketID string
-			it       Item
-		)
-
-		if err := itemRows.Scan(&ticketID, &it.ModelID, &it.ModelName, &it.Qty, &it.ApprovedQty); err != nil {
-			return fmt.Errorf("read an item %w", err)
-		}
-
-		tickets[at[ticketID]].Items = append(tickets[at[ticketID]].Items, it)
-	}
-
-	if err := itemRows.Err(); err != nil {
-		return fmt.Errorf("read the items %w", err)
-	}
-
-	itemRows.Close()
+	ids, at := indexOf(tickets)
 
 	historyRows, err := q.Query(ctx, `
 		select ticket_id::text, at, status, actor_kind, note from ticket_history
@@ -135,6 +103,54 @@ func fillDetails(ctx context.Context, q catalog.Querier, tickets []Ticket) error
 
 	if err := historyRows.Err(); err != nil {
 		return fmt.Errorf("read the history %w", err)
+	}
+
+	return nil
+}
+
+// indexOf returns the ids of the tickets and the place of each id in the slice.
+func indexOf(tickets []Ticket) ([]string, map[string]int) {
+	ids := make([]string, 0, len(tickets))
+	at := make(map[string]int, len(tickets))
+
+	for i, t := range tickets {
+		ids = append(ids, t.ID)
+		at[t.ID] = i
+	}
+
+	return ids, at
+}
+
+// fillItems adds the items to the tickets with one query. They come in the order of the model name.
+func fillItems(ctx context.Context, q catalog.Querier, tickets []Ticket) error {
+	ids, at := indexOf(tickets)
+
+	itemRows, err := q.Query(ctx, `
+		select ti.ticket_id::text, ti.model_id::text, m.name, ti.qty, ti.approved_qty
+		from ticket_items ti join models m on m.id = ti.model_id
+		where ti.ticket_id = any($1::text[]::uuid[])
+		order by ti.ticket_id, lower(m.name), ti.model_id`, ids)
+	if err != nil {
+		return fmt.Errorf("read the items %w", err)
+	}
+
+	defer itemRows.Close()
+
+	for itemRows.Next() {
+		var (
+			ticketID string
+			it       Item
+		)
+
+		if err := itemRows.Scan(&ticketID, &it.ModelID, &it.ModelName, &it.Qty, &it.ApprovedQty); err != nil {
+			return fmt.Errorf("read an item %w", err)
+		}
+
+		tickets[at[ticketID]].Items = append(tickets[at[ticketID]].Items, it)
+	}
+
+	if err := itemRows.Err(); err != nil {
+		return fmt.Errorf("read the items %w", err)
 	}
 
 	return nil

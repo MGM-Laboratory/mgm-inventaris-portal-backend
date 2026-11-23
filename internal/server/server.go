@@ -72,6 +72,7 @@ func NewAPI(cfg config.Config, deps Deps) *fiber.App {
 	registerCatalogRoutes(app, deps)
 	registerAdminAssetRoutes(app, deps)
 	registerTicketRoutes(app, cfg, deps)
+	registerAdminTicketRoutes(app, deps)
 
 	return app
 }

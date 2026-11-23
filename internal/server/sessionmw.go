@@ -33,12 +33,14 @@ type RateLimiter interface {
 
 // Deps is what the routes need from outside the package.
 type Deps struct {
-	Sessions    SessionStore
-	Limiter     RateLimiter
-	Admins      AdminService
-	Catalog     CatalogService
-	Tickets     TicketService
-	Idempotency Idempotency
+	Sessions     SessionStore
+	Limiter      RateLimiter
+	Admins       AdminService
+	Catalog      CatalogService
+	Tickets      TicketService
+	AdminTickets AdminTicketService
+	Dashboard    DashboardService
+	Idempotency  Idempotency
 }
 
 // sessionState is what LoadSession found for the request.
