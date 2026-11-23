@@ -13,6 +13,7 @@ on:
       - "go.mod"
       - "go.sum"
       - "docs-site/**"
+      - "cmd/docs-server/**"
       - "openapi.yaml"
       - "redocly.yaml"
       - ".github/scripts/hash-image-files.sh"
@@ -103,8 +104,8 @@ jobs:
 
       # Each list is turned into "path, hash" lines sorted by path, then joined on the path. A path that only one build has gets
       # the hash MISSING on the other side, and a path with two different hashes is a changed file. No path is ignored, because the
-      # API image holds one static binary and the files of its base image, the docs image holds the page and the files of its base
-      # image, and none of them may differ.
+      # API image holds one static binary and the files of its base image, the docs image holds one static binary, the page and the
+      # files of its base image, and none of them may differ.
       - name: Compare the two builds
         env:
           LISTS: ${{ runner.temp }}/lists

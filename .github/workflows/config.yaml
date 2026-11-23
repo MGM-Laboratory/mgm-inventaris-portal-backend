@@ -277,15 +277,15 @@ jobs:
           npm ci --ignore-scripts --no-audit --no-fund
           npm run build
 
-      # The build writes the page, its gzip copy and the header of the Content-Security-Policy. All three must exist and hold data.
+      # The build writes the page, its gzip copy and the Content-Security-Policy. All three must exist and hold data.
       - name: Check the files of the page
         working-directory: docs-site/dist
         run: |
-          for file in index.html index.html.gz csp.conf; do
+          for file in index.html index.html.gz csp.txt; do
             test -s "$file" || { echo "$file is missing or empty" >&2; exit 1; }
           done
-          grep -q 'script-src' csp.conf
-          ls -l index.html index.html.gz csp.conf
+          grep -q 'script-src' csp.txt
+          ls -l index.html index.html.gz csp.txt
 
   # The one check that the ruleset requires, so a job can be added or renamed here without a change of the ruleset
   gate:

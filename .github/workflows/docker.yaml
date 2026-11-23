@@ -70,7 +70,10 @@ jobs:
             type=sha,prefix=sha-,format=short,enable=${{ github.ref_type != 'tag' }}
             type=ref,event=pr,prefix=pr-
             type=semver,pattern={{version}}
+          # The action sets title and description from the repository, which would name the docs image after the backend, so both are set
+          # here for each image. The url and the source of the repository are right for both images.
           labels: |
+            org.opencontainers.image.title=${{ matrix.repo }}
             org.opencontainers.image.licenses=GPL-3.0-only
             org.opencontainers.image.description=${{ matrix.description }}
 
